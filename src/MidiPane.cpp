@@ -894,6 +894,9 @@ void MidiPane::buttonClicked (Button* buttonThatWasClicked)
             return;
         }
         SEQ64::writeProperty("midiimportfolder", dest.getParentDirectory().getFullPathName());
+
+
+
         std::unique_ptr<MidiFile> midi;
         midi.reset(new MidiFile());
         FileInputStream fis(dest);
@@ -901,6 +904,12 @@ void MidiPane::buttonClicked (Button* buttonThatWasClicked)
         seq64.seq.reset(new SeqFile(seq64.romdesc));
         seq64.seq->name = dest.getFileNameWithoutExtension();
         seq64.seq->fromMidiFile(*midi);
+
+        // SEQ64 TODO:
+        // seq64.seq.reset(new SeqFile(seq64.romdesc));
+        // seq64.seq->importresult = seq64.seq->importMIDIV2(dest);
+
+
         seq64.maincomponent->onSeqLoaded();
         if(seq64.seq->importresult == 0){
             NativeMessageBox::showMessageBox(AlertWindow::InfoIcon, "seq64", 

@@ -27,6 +27,113 @@
 
 #include "JuceHeader.h"
 
+#define max_layers 4
+
+inline bool isInt(String str, bool allowNegative = true)
+{
+    str = str.trim();
+    if (str.isEmpty())
+        return false;
+    CharPointer_UTF32 s = str.toUTF32();
+    for (int i = 0; i < s.length(); ++s)
+    {
+        if (s[i] == '-')
+        {
+            if (i != 0 || !allowNegative || s.length() == 1)
+                return false;
+            continue;
+        }
+        else if (s[i] >= '0' && s[i] <= '9')
+        {
+            continue;
+        }
+        else
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+inline bool isHex(String str, bool allow0x = true)
+{
+    str = str.trim().toLowerCase();
+    if (str.isEmpty())
+        return false;
+    if (str.startsWith("0x") && allow0x)
+        str = str.substring(2);
+    CharPointer_UTF32 s = str.toUTF32();
+    for (int i = 0; i < s.length(); ++s)
+    {
+        if ((s[i] >= '0' && s[i] <= '9') || (s[i] >= 'a' && s[i] <= 'f'))
+        {
+            continue;
+        }
+        else
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+inline bool isDec(String str, bool allowNegative = true)
+{
+    str = str.trim();
+    if (str.isEmpty())
+        return false;
+    CharPointer_UTF32 s = str.toUTF32();
+    bool decimalpoint = false;
+    for (int i = 0; i < s.length(); ++s)
+    {
+        if (s[i] == '-')
+        {
+            if (i != 0 || !allowNegative || s.length() == 1)
+                return false;
+            continue;
+        }
+        else if (s[i] == '.')
+        {
+            if (decimalpoint || s.length() == 1)
+                return false;
+            decimalpoint = true;
+            continue;
+        }
+        else if (s[i] >= '0' && s[i] <= '9')
+        {
+            continue;
+        }
+        else
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+template <typename INT_TYPE>
+inline String hex(INT_TYPE i, int bits)
+{
+    String ret;
+    while (bits > 0)
+    {
+        uint8_t nybble = i & 0xF;
+        if (nybble <= 9)
+            ret = String::charToString('0' + nybble) + ret;
+        else
+            ret = String::charToString('A' + nybble - 0xA) + ret;
+        i >>= 4;
+        bits -= 4;
+    }
+    return ret;
+}
+
+inline String hex(uint8_t i) { return hex(i, 8); }
+inline String hex(uint16_t i) { return hex(i, 16); }
+inline String hex(uint32_t i) { return hex(i, 32); }
+inline String hexauto(int i) { return hex(i, i >= 0x10000 ? 32 : i >= 0x100 ? 16
+                                                                            : 8); }
+
 class ROM;
 class BankFile;
 
@@ -63,6 +170,35 @@ class CCTracker{
     int lasttime;
     int q_amp;
     int lastvalue;
+    ValueTree lastcmd;
+    bool warnedUnused;
+};
+
+enum CCCommands {
+    CC_SOUND_BANK = 0,
+    CC_MODULATION = 1,
+    CC_VOLUME = 7,
+    CC_PAN = 10,
+    CC_VOLUME_EXPR = 11,
+    CC_PRIORITY_GPC1 = 16,
+    CC_PRIORITY_GPC2 = 17,
+    CC_NONE_24 = 24,
+    CC_PRIORITY_ELSE = 25,
+    CC_VIBRATO_RATE = 76,
+    CC_VIBRATO_EXTENT = 77,
+    CC_RELEASE_RATE = 78,
+    CC_PRIORITY_SC10 = 79,
+    CC_PRIORITY_US = 85,
+    CC_8BIT_WAVE_INDEX = 87,
+    CC_CHN_LYR_PAN_MIX = 89,
+    CC_TRANSPOSE = 90,
+    CC_REVERB = 91,
+    CC_FLSTUDIO_MST_VOL = 114,
+    CC_FLSTUDIO_MARKER = 115,
+    CC_PITCH_BEND = 128,
+    CC_INSTRUMENT = 129,
+
+    CC_TOTAL = 130
 };
 
 
@@ -70,6 +206,9 @@ class SeqFile{
     public:
     SeqFile(ValueTree romdesc_);
     ~SeqFile();
+
+    String seqname;
+    StringArray tsecnames;
     
     uint32 getLength();
     uint8 readByte(uint32 address);
@@ -117,6 +256,19 @@ class SeqFile{
     MidiFile* toMIDIFile(ROM& rom);
     void deleteSection(int sectodelete);
     void fromMidiFile(MidiFile& mfile);
+
+    void dbgmsg(String s, bool newline = true);
+
+    bool SeqFile::isValidCC(int cc);
+    void SeqFile::getExtendedCC(MidiMessage msg, int &cc, int &value);
+    void SeqFile::prefSetBool(Identifier opt, String value, String prefline);
+    void SeqFile::prefSetInt(Identifier opt, int max, String value, String prefline);
+    void SeqFile::prefSetHex(Identifier opt, int max, String value, String prefline);
+    int SeqFile::importMIDIV2(File midifile);
+
+    void SeqFile::optimizeV2();
+    bool SeqFile::isCloseEnoughV2(ValueTree command1, ValueTree command2, bool allowCCMerge);
+
     bool isCloseEnough(ValueTree command1, ValueTree command2, bool allowCCMerge);
     int getTotalSectionTime(ValueTree section);
     
@@ -142,6 +294,8 @@ class SeqFile{
     
     bool debug;
     
+    static Identifier idCC;
+    static Identifier idSrcCmdRef;
     static Identifier idName;
     static Identifier idLength;
     static Identifier idAction;

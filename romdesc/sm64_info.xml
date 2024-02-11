@@ -12,28 +12,35 @@
       <parameter datasrc="fixed" datalen="2" name="Address" meaning="Relative Address"
                  add="0" multiply="1"/>
     </command>
-    <command cmd="144" name="Absolute Trk Ptr" action="Ptr Track Data" cmdend="147"
+    <command cmd="144" name="Absolute Trk Ptr" action="Ptr Track Data" cmdend="159"
              validinchn="1">
       <parameter datasrc="offset" datalen="0" name="Note Layer" meaning="Note Layer"
                  add="0" multiply="1"/>
       <parameter datasrc="fixed" datalen="2" name="Address" meaning="Absolute Address"
                  add="0" multiply="1"/>
     </command>
-    <command cmd="96" name="Unknown (Volume 2nd byte?)" action="No Action"
-             cmdend="111" validinchn="1">
-      <parameter datasrc="offset" datalen="0" name="Value" meaning="None" add="0"
+    <command cmd="96" name="Channel Prio US" action="Chn Priority US" cmdend="111"
+             validinchn="1">
+      <parameter datasrc="offset" datalen="0" name="Priority" meaning="Value" add="0"
                  multiply="1"/>
     </command>
-    <command cmd="193" name="Instrument" action="Chn Instrument" validinchn="1">
+    <command cmd="193" name="Instrument" action="Chn Instrument" validinchn="1"
+             validintrk="0">
       <parameter datasrc="fixed" datalen="1" name="Instrument" meaning="Value"
                  add="0" multiply="1"/>
     </command>
-    <command cmd="194" name="Transposition" action="Chn Transpose" validinchn="1"
+    <command cmd="195" name="Large Notes Off" action="No Action" validinchn="1"/>
+    <command cmd="196" name="Large Notes On" action="Chn Reset" validinchn="1"/>
+    <command cmd="198" name="Sound Bank" action="Chn Set Bank" validinchn="1"
              validintrk="0">
-      <parameter datasrc="fixed" datalen="1" name="Value" meaning="Value" add="0"
+      <parameter datasrc="fixed" datalen="1" name="Bank" meaning="Value" add="0"
                  multiply="1"/>
     </command>
-    <command cmd="196" name="Channel Start" action="Chn Reset" validinchn="1"/>
+    <command cmd="210" name="Sustain" action="No Action" validinchn="1"
+             validintrk="0">
+      <parameter datasrc="fixed" datalen="1" name="Sustain" meaning="Value" add="0"
+                 multiply="1"/>
+    </command>
     <command cmd="211" name="Pitch Bend" action="Chn Pitch Bend" validinchn="1"
              validintrk="0">
       <parameter datasrc="fixed" datalen="1" name="Bend" meaning="Value" add="0"
@@ -44,17 +51,32 @@
       <parameter datasrc="fixed" datalen="1" name="Value" meaning="Value" add="0"
                  multiply="1"/>
     </command>
+    <command cmd="215" name="Vibrato Rate" action="Chn Vibrato Rate" validinchn="1"
+             validintrk="0">
+      <parameter datasrc="fixed" datalen="1" name="Vibrato Rate" meaning="Value"
+                 add="0" multiply="1"/>
+    </command>
     <command cmd="216" name="Vibrato (Chn)" action="Chn Vibrato" validinchn="1"
              validintrk="0">
       <parameter datasrc="fixed" datalen="1" name="Vibrato" meaning="Value" add="0"
                  multiply="1"/>
     </command>
-    <command cmd="218" name="Unknown" action="No Action" validinchn="1">
-      <parameter datasrc="fixed" datalen="1" name="Unnamed" meaning="None" add="0"
+    <command cmd="217" name="Release Rate" action="Chn Release Rate" validinchn="1"
+             validintrk="0">
+      <parameter datasrc="fixed" datalen="1" name="Release Rate" meaning="Value"
+                 add="0" multiply="1"/>
+    </command>
+    <command cmd="218" name="Envelope" action="Ptr Track Data" validinchn="1">
+      <parameter datasrc="fixed" datalen="2" name="Address" meaning="Absolute Address"
+                 add="0" multiply="1"/>
+    </command>
+    <command cmd="219" name="Transposition" action="Chn Transpose" validinchn="1"
+             validintrk="0">
+      <parameter datasrc="fixed" datalen="1" name="Transposition" meaning="Value" add="0"
                  multiply="1"/>
     </command>
-    <command cmd="220" name="Drumset?" action="No Action" validinchn="1" validintrk="0">
-      <parameter datasrc="fixed" datalen="1" name="Unknown" meaning="None" add="0"
+    <command cmd="220" name="Pan Layer Mix (DRUMSET)" action="Chn Pan Layer Mix" validinchn="1" validintrk="0">
+      <parameter datasrc="fixed" datalen="1" name="Pan Mix" meaning="Value" add="0"
                  multiply="1"/>
     </command>
     <command cmd="221" name="Chan Pan" action="Chn Pan" validinchn="1" validintrk="0">
@@ -70,7 +92,7 @@
       <parameter datasrc="fixed" datalen="1" name="Unknown" meaning="None" add="0"
                  multiply="1"/>
     </command>
-    <command cmd="233" name="Channel Priority" action="No Action" validinchn="1"
+    <command cmd="233" name="Channel Priority EU" action="No Action" validinchn="1"
              validintrk="0">
       <parameter datasrc="fixed" datalen="1" name="Priority" meaning="None" add="0"
                  multiply="1"/>
@@ -111,6 +133,14 @@
     <command cmd="194" name="Ly Transpose" action="Layer Transpose" validintrk="1">
       <parameter datasrc="fixed" datalen="1" name="Value" meaning="Value" add="0"
                  multiply="1"/>
+    </command>
+    <command cmd="198" name="Ly Instrument" action="No Action" validintrk="1">
+      <parameter datasrc="fixed" datalen="1" name="Instrument" meaning="None"
+                 add="0" multiply="1.0"/>
+    </command>
+    <command cmd="202" name="Ly Pan" action="No Action" validintrk="1">
+      <parameter datasrc="fixed" datalen="1" name="Pan" meaning="None" add="0"
+                 multiply="1.0"/>
     </command>
     <command cmd="0" name="Load Chn Bit to Q" action="No Action" cmdend="15"
              validinseq="1">
@@ -205,14 +235,12 @@
       <parameter datasrc="fixed" datalen="1" name="Value" meaning="None" add="0"
                  multiply="1"/>
     </command>
-    <command cmd="211" name="Stored to (u8)seq_params[0x4] and all (u8)chan_params[0x2]"
-             action="Sequence Format" validinseq="1">
+    <command cmd="211" name="Mute Behavior" action="Sequence Format" validinseq="1">
       <parameter datasrc="fixed" datalen="1" name="Format" meaning="Value" add="0"
                  multiply="1"/>
     </command>
-    <command cmd="213" name="Ratio of 127 stored to (float)seq_params[0x24]"
-             action="Sequence Type" validinseq="1">
-      <parameter datasrc="fixed" datalen="1" name="Something cvt to float and divided by 127.0"
+    <command cmd="213" name="Mute Scale" action="Sequence Type" validinseq="1">
+      <parameter datasrc="fixed" datalen="1" name="Value cast to s8 and divided by 127.0f"
                  meaning="Value" add="0" multiply="1"/>
     </command>
     <command cmd="214" name="Channel Disable" action="Channel Disable" validinseq="1">

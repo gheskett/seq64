@@ -27,6 +27,8 @@
 #include "seq64.h"
 #include "BankFile.h"
 
+Identifier SeqFile::idCC("cc");
+Identifier SeqFile::idSrcCmdRef("srccmdref");
 Identifier SeqFile::idName("name");
 Identifier SeqFile::idLength("length");
 Identifier SeqFile::idAction("action");
@@ -79,6 +81,8 @@ CCTracker::CCTracker() {
     lasttime = 0;
     q_amp = 0;
     lastvalue = 0;
+    lastcmd = ValueTree();
+    warnedUnused = false;
 }
 
 SeqFile::SeqFile(ValueTree romdesc_) : romdesc(romdesc_) {
@@ -1340,7 +1344,20 @@ void SeqFile::parse() {
             // do nothing
         } else if (action == "Chn Vibrato") {
             // do nothing
-        } else if (action == "Chn Pitch Bend") {
+        }
+        
+        // CUSTOM COMMANDS!
+        else if (action == "Chn Vibrato Rate") {
+            // do nothing
+        } else if (action == "Chn Release Rate") {
+            // do nothing
+        } else if (action == "Chn Priority US") {
+            // do nothing
+        } else if (action == "Chn Set Bank") {
+            // do nothing
+        }
+        
+        else if (action == "Chn Pitch Bend") {
             // do nothing
         } else if (action == "Chn Instrument") {
             // do nothing
@@ -1380,7 +1397,6 @@ MidiFile *SeqFile::toMIDIFile(ROM &rom) {
     curtsec->time = 0;
     tsections.add(curtsec);
     // Transpose
-    int max_layers = 4;
     Array<int> transposes;
     transposes.resize(16 * max_layers);
     // Program options
@@ -1628,13 +1644,13 @@ MidiFile *SeqFile::toMIDIFile(ROM &rom) {
                 value = 0;
             int cc = -1;
             if (mtrvol == "CC7 (Volume)") {
-                cc = 7;
+                cc = CC_VOLUME;
             } else if (mtrvol == "CC11 (Expr)") {
-                cc = 11;
+                cc = CC_VOLUME_EXPR;
             } else if (mtrvol == "CC16 (GPC1)") {
-                cc = 16;
+                cc = CC_PRIORITY_GPC1;
             } else if (mtrvol == "CC24 (None)") {
-                cc = 24;
+                cc = CC_NONE_24;
             } else if (mtrvol == "SysEx MstrVol") {
                 char sysexdata[6];
                 sysexdata[0] = 0x7F;
@@ -1686,13 +1702,13 @@ MidiFile *SeqFile::toMIDIFile(ROM &rom) {
                 continue;
             }
             value = getAdjustedValue(param);
-            int cc = 25;
+            int cc = CC_PRIORITY_ELSE;
             if (chnpriority == "CC17 (GPC2)") {
-                cc = 17;
+                cc = CC_PRIORITY_GPC2;
             } else if (chnpriority == "CC25 (None)") {
-                cc = 25;
+                cc = CC_PRIORITY_ELSE;
             } else if (chnpriority == "CC79 (SC10)") {
-                cc = 79;
+                cc = CC_PRIORITY_SC10;
             } else {
                 SEQ64::say("Channel Priority event, unknown mapping: " + chnpriority + ", ignoring");
                 continue;
@@ -1707,11 +1723,11 @@ MidiFile *SeqFile::toMIDIFile(ROM &rom) {
                 continue;
             }
             value = getAdjustedValue(param);
-            int cc = 7;
+            int cc = CC_VOLUME;
             if (chnvol == "CC7 (Volume)") {
-                cc = 7;
+                cc = CC_VOLUME;
             } else if (chnvol == "CC11 (Expr)") {
-                cc = 11;
+                cc = CC_VOLUME_EXPR;
             } else {
                 SEQ64::say("Channel Volume event, unknown mapping: " + chnvol + ", ignoring");
                 continue;
@@ -1726,7 +1742,7 @@ MidiFile *SeqFile::toMIDIFile(ROM &rom) {
                 continue;
             }
             value = getAdjustedValue(param);
-            msg = MidiMessage::controllerEvent(channel + 1, 10, value);
+            msg = MidiMessage::controllerEvent(channel + 1, CC_PAN, value);
             msg.setTimeStamp(t * ticks_multiplier);
             mtracks[channel]->addEvent(msg);
         } else if (action == "Chn Effects") {
@@ -1736,7 +1752,17 @@ MidiFile *SeqFile::toMIDIFile(ROM &rom) {
                 continue;
             }
             value = getAdjustedValue(param);
-            msg = MidiMessage::controllerEvent(channel + 1, 91, value);
+            msg = MidiMessage::controllerEvent(channel + 1, CC_REVERB, value);
+            msg.setTimeStamp(t * ticks_multiplier);
+            mtracks[channel]->addEvent(msg);
+        } else if (action == "Chn Vibrato Rate") {
+            param = command.getChildWithProperty(idMeaning, "Value");
+            if (!param.isValid()) {
+                SEQ64::say("Chn Vibrato Rate event with no value!");
+                continue;
+            }
+            value = getAdjustedValue(param);
+            msg = MidiMessage::controllerEvent(channel + 1, CC_VIBRATO_RATE, value);
             msg.setTimeStamp(t * ticks_multiplier);
             mtracks[channel]->addEvent(msg);
         } else if (action == "Chn Vibrato") {
@@ -1746,7 +1772,20 @@ MidiFile *SeqFile::toMIDIFile(ROM &rom) {
                 continue;
             }
             value = getAdjustedValue(param);
-            msg = MidiMessage::controllerEvent(channel + 1, 77, value);
+            msg = MidiMessage::controllerEvent(channel + 1, CC_MODULATION, value);
+            msg.setTimeStamp(t * ticks_multiplier);
+            mtracks[channel]->addEvent(msg);
+            msg = MidiMessage::controllerEvent(channel + 1, CC_VIBRATO_EXTENT, value);
+            msg.setTimeStamp(t * ticks_multiplier);
+            mtracks[channel]->addEvent(msg);
+        } else if (action == "Chn Release Rate") {
+            param = command.getChildWithProperty(idMeaning, "Value");
+            if (!param.isValid()) {
+                SEQ64::say("Chn Release Rate event with no value!");
+                continue;
+            }
+            value = getAdjustedValue(param);
+            msg = MidiMessage::controllerEvent(channel + 1, CC_RELEASE_RATE, value);
             msg.setTimeStamp(t * ticks_multiplier);
             mtracks[channel]->addEvent(msg);
         } else if (action == "Chn Pitch Bend") {
@@ -2264,7 +2303,6 @@ void SeqFile::fromMidiFile(MidiFile &mfile) {
     MidiMessageSequence *trk;
     MidiMessageSequence *layertrk;
     SEQ64::say("Assigning notes to notelayers...");
-    int max_layers = 4;
     OwnedArray<MidiMessageSequence> layertracks;
     for (channel = 0; channel < 16; channel++) {
         for (layer = 0; layer < max_layers; layer++) {
@@ -2556,45 +2594,91 @@ void SeqFile::fromMidiFile(MidiFile &mfile) {
     int qt, qa;
     qt = midiopts.getProperty("q_other_time", 1);
     qa = midiopts.getProperty("q_other_amp", 1);
-    for (cc = 0; cc < 130; cc++) { // 128 is pitch, 129 is program
+    for (cc = 0; cc < CC_TOTAL; cc++) { // 128 is pitch, 129 is program
         ccstates.add(new CCTracker());
         ccstates[cc]->q_time = qt;
         ccstates[cc]->q_amp = qa;
     }
-    ccstates[128]->q_time = midiopts.getProperty("q_pitch_time", 1);
-    ccstates[128]->q_amp = midiopts.getProperty("q_pitch_amp", 1);
+    ccstates[CC_PITCH_BEND]->q_time = midiopts.getProperty("q_pitch_time", 1);
+    ccstates[CC_PITCH_BEND]->q_amp = midiopts.getProperty("q_pitch_amp", 1);
+
     qt = midiopts.getProperty("q_vol_time", 3);
     qa = midiopts.getProperty("q_vol_amp", 2);
-    ccstates[7]->q_time = qt;
-    ccstates[7]->q_amp = qa;
-    ccstates[11]->q_time = qt;
-    ccstates[11]->q_amp = qa;
+    ccstates[CC_VOLUME]->q_time = qt;
+    ccstates[CC_VOLUME]->q_amp = qa;
+    ccstates[CC_VOLUME_EXPR]->q_time = qt;
+    ccstates[CC_VOLUME_EXPR]->q_amp = qa;
+
     qt = midiopts.getProperty("q_pan_time", 3);
     qa = midiopts.getProperty("q_pan_amp", 2);
-    ccstates[10]->q_time = qt;
-    ccstates[10]->q_amp = qa;
-    ccstates[91]->q_time = qt;
-    ccstates[91]->q_amp = qa;
+    ccstates[CC_PAN]->q_time = qt;
+    ccstates[CC_PAN]->q_amp = qa;
+    ccstates[CC_REVERB]->q_time = qt;
+    ccstates[CC_REVERB]->q_amp = qa;
+
+    ccstates[CC_VIBRATO_EXTENT]->q_time = 1;
+    ccstates[CC_VIBRATO_EXTENT]->q_amp = 1;
+    ccstates[CC_VIBRATO_RATE]->q_time = 1;
+    ccstates[CC_VIBRATO_RATE]->q_amp = 1;
+    ccstates[CC_RELEASE_RATE]->q_time = 1;
+    ccstates[CC_RELEASE_RATE]->q_amp = 1;
+    ccstates[CC_PRIORITY_US]->q_time = 1;
+    ccstates[CC_PRIORITY_US]->q_amp = 1;
+    ccstates[CC_SOUND_BANK]->q_time = 1;
+    ccstates[CC_SOUND_BANK]->q_amp = 1;
+    ccstates[CC_CHN_LYR_PAN_MIX]->q_time = 1;
+    ccstates[CC_CHN_LYR_PAN_MIX]->q_amp = 1;
+    ccstates[CC_TRANSPOSE]->q_time = 1;
+    ccstates[CC_TRANSPOSE]->q_amp = 1;
+
+    ccstates[CC_INSTRUMENT]->q_time = 0;
+    ccstates[CC_INSTRUMENT]->q_amp = 0;
+    ccstates[CC_8BIT_WAVE_INDEX]->q_time = 0;
+    ccstates[CC_8BIT_WAVE_INDEX]->q_amp = 0;
+
     // CC actions setup
     if (chnpriority == "CC17 (GPC2)") {
-        cc = 17;
+        cc = CC_PRIORITY_GPC2;
     } else if (chnpriority == "CC79 (SC10))") {
-        cc = 79;
+        cc = CC_PRIORITY_SC10;
     } else {
-        cc = 25;
+        cc = CC_PRIORITY_ELSE;
     }
-    ccstates[cc]->action = "Chn Priority"; // TODO:
+    ccstates[cc]->action = "Chn Priority";
     if (chnvol == "CC11 (Expr)") {
-        cc = 11;
+        cc = CC_VOLUME_EXPR;
     } else {
-        cc = 7;
+        cc = CC_VOLUME;
     }
     ccstates[cc]->action = "Chn Volume";
-    ccstates[10]->action = "Chn Pan";
-    ccstates[91]->action = "Chn Effects"; // TODO:
-    ccstates[77]->action = "Chn Vibrato";
-    ccstates[128]->action = "Chn Pitch Bend";
-    ccstates[129]->action = "Chn Instrument";
+
+    ccstates[CC_PAN]->action = "Chn Pan";
+    ccstates[CC_VIBRATO_EXTENT]->action = "Chn Vibrato";
+    ccstates[CC_REVERB]->action = "Chn Effects";
+    ccstates[CC_PITCH_BEND]->action = "Chn Pitch Bend";
+    ccstates[CC_INSTRUMENT]->action = "Chn Instrument";
+
+
+    /****************************
+     * BEGIN CUSTOM CC COMMANDS *
+     ****************************/
+
+
+    ccstates[CC_VIBRATO_RATE]->action = "Chn Vibrato Rate";
+    ccstates[CC_RELEASE_RATE]->action = "Chn Release Rate";
+    ccstates[CC_PRIORITY_US]->action = "Chn Priority US";
+    ccstates[CC_SOUND_BANK]->action = "Chn Set Bank";
+    ccstates[CC_CHN_LYR_PAN_MIX]->action = "Chn Pan Layer Mix";
+    ccstates[CC_TRANSPOSE]->action = "Chn Transpose";
+    ccstates[CC_MODULATION]->action = ""; // Chn Modulation; This will replace itself with vibrato
+    ccstates[CC_8BIT_WAVE_INDEX]->action = ""; // Chn 8-Bit Wave Index; This never actually shows itself post-conversion, but it needs to reserve this CC.
+
+
+    /**************************
+     * END CUSTOM CC COMMANDS *
+     **************************/
+
+
     // Channel data
     for (channel = 0; channel < 16; channel++) {
         if (channelsused[channel] < 0)
@@ -2648,10 +2732,16 @@ void SeqFile::fromMidiFile(MidiFile &mfile) {
                 section.addChild(want, cmd, nullptr);
                 cmd++;
             }
+
+            int lastInstrument = 0;
+            int last8bitWave = 0;
+            bool chnPanMixExists = false;
+
             // Clear CC states
-            for (cc = 0; cc < 130; cc++) { // 128 is pitch, 129 is program
+            for (cc = 0; cc < CC_TOTAL; cc++) { // 128 is pitch, 129 is program
                 ccstates[cc]->lasttime = -10000000;
                 ccstates[cc]->lastvalue = -10000000;
+                ccstates[cc]->lastcmd = ValueTree();
             }
             // Parse all commands
             t = starttime;
@@ -2672,16 +2762,97 @@ void SeqFile::fromMidiFile(MidiFile &mfile) {
                     cc = msg.getControllerNumber();
                     value = msg.getControllerValue();
                 } else if (msg.isProgramChange()) {
-                    cc = 129;
+                    cc = CC_INSTRUMENT;
                     value = msg.getProgramChangeNumber();
+                    lastInstrument = value;
+                    if (last8bitWave != 0) {
+                        // Process this as an instrument command, then tack on the 8-bit instrument right after. This will safeguard for intentional instrument envelope loads.
+                        if (ccstates[cc]->lasttime != timestamp || ccstates[cc]->lastvalue != value) {
+                            ccstates[cc]->lastvalue = value;
+                            ccstates[cc]->lasttime = timestamp;
+
+                            want = wantAction(ccstates[cc]->action, 1);
+                            wantProperty(want, "Value", value);
+                            advanceToTimestamp(section, 1, cmd, t, timestamp);
+                            // Write command
+                            section.addChild(createCommand(want), cmd, nullptr);
+                            cmd++;
+                        }
+
+                        value = last8bitWave + 0x7F;
+                    } else if (ccstates[cc]->lasttime == timestamp && ccstates[cc]->lastvalue == value) {
+                        continue; // No reason to repeat ourselves
+                    }
                 } else if (msg.isPitchWheel()) {
-                    cc = 128;
+                    cc = CC_PITCH_BEND;
                     value = msg.getPitchWheelValue();
                     value -= 0x2000;
                     value >>= 6;
                     value &= 0x000000FF;
                 }
-                if (cc < 0 || cc >= 130)
+
+                if (cc == CC_MODULATION) {
+                    cc = CC_VIBRATO_EXTENT;
+                }
+
+                if (cc == CC_TRANSPOSE) {
+                    value -= 64;
+                }
+
+                if (cc == CC_SOUND_BANK) {
+                    want = wantAction(ccstates[cc]->action, 1);
+                    wantProperty(want, "Value", value);
+                    advanceToTimestamp(section, 1, cmd, t, timestamp);
+                    // Write command
+                    section.addChild(createCommand(want), cmd, nullptr);
+                    cmd++;
+
+                    cc = CC_INSTRUMENT;
+                    if (last8bitWave == 0) {
+                        value = lastInstrument;
+                    } else {
+                        value = last8bitWave + 0x7F;
+                    }
+                }
+                
+                if (cc == CC_8BIT_WAVE_INDEX) {
+                    cc = CC_INSTRUMENT;
+                    last8bitWave = value;
+                    if (last8bitWave == 0) {
+                        value = lastInstrument;
+                    } else {
+                        value = last8bitWave + 0x7F;
+                    }
+
+                    if (ccstates[cc]->lasttime == timestamp && ccstates[cc]->lastvalue == value) {
+                        continue; // No reason to repeat ourselves
+                    }
+                }
+
+                if (cc == CC_CHN_LYR_PAN_MIX) {
+                    chnPanMixExists = true; // Override drumset autodetection
+                }
+
+                // Channel/layer panning mix should prioritize layer panning in full, for use with autodetected drumset (if no manual specification is provided)
+                if (cc == CC_INSTRUMENT && !chnPanMixExists) {
+                    if (value == 0x7F && ccstates[cc]->lastvalue != 0x7F) {
+                        want = wantAction(ccstates[CC_CHN_LYR_PAN_MIX]->action, 1);
+                        wantProperty(want, "Value", 0); // Force value of 0
+                        advanceToTimestamp(section, 1, cmd, t, timestamp);
+                        // Write command
+                        section.addChild(createCommand(want), cmd, nullptr);
+                        cmd++;
+                    } else if (value != 0x7F && ccstates[cc]->lastvalue == 0x7F) {
+                        want = wantAction(ccstates[CC_CHN_LYR_PAN_MIX]->action, 1);
+                        wantProperty(want, "Value", 127); // Force value of 127
+                        advanceToTimestamp(section, 1, cmd, t, timestamp);
+                        // Write command
+                        section.addChild(createCommand(want), cmd, nullptr);
+                        cmd++;
+                    }
+                }
+
+                if (cc < 0 || cc >= CC_TOTAL)
                     continue;
                 if (abs(value - ccstates[cc]->lastvalue) < ccstates[cc]->q_amp)
                     continue;
@@ -3498,6 +3669,2131 @@ void SeqFile::optimize() {
         }
     }
 }
+
+
+
+
+
+
+
+// void SeqFile::dbgmsg(String s, bool newline) {
+//     if (newline) {
+//         SEQ64::say(s);
+//     } else {
+//         SEQ64::sayNoNewline(s);
+//     }
+// }
+
+// bool SeqFile::isValidCC(int cc) {
+//     return !(cc < 0 || cc > 129
+//             || cc == 6 || cc == 32 || cc == 38
+//             || (cc >= 96 && cc <= 101) || (cc >= 120 && cc <= 127));
+// }
+
+// void SeqFile::getExtendedCC(MidiMessage msg, int &cc, int &value) {
+//     cc = -1;
+//     value = 0;
+//     if (msg.isController()) {
+//         cc = msg.getControllerNumber();
+//         value = msg.getControllerValue();
+//     } else if (msg.isProgramChange()) {
+//         cc = 129;
+//         value = msg.getProgramChangeNumber();
+//     } else if (msg.isPitchWheel()) {
+//         cc = 128;
+//         value = msg.getPitchWheelValue();
+//         value -= 0x2000;
+//         value >>= 6;
+//         value &= 0x000000FF;
+//     }
+// }
+
+// void SeqFile::prefSetBool(Identifier opt, String value, String prefline)
+// {
+//     bool truthy = value.equalsIgnoreCase("on") || value == "1" || value.equalsIgnoreCase("true") || value.equalsIgnoreCase("yes");
+//     bool falsey = value.equalsIgnoreCase("off") || value == "1" || value.equalsIgnoreCase("false") || value.equalsIgnoreCase("no");
+//     if (truthy)
+//         midiopts.setProperty(opt, true, nullptr);
+//     else if (falsey)
+//         midiopts.setProperty(opt, false, nullptr);
+//     else
+//     {
+//         dbgmsg(".pref: Invalid bool value: " + prefline);
+//         importresult |= 1;
+//     }
+// }
+
+// void SeqFile::prefSetInt(Identifier opt, int max, String value, String prefline)
+// {
+//     int v = value.getIntValue();
+//     if (isInt(value) && v >= 0 && v <= max)
+//     {
+//         midiopts.setProperty(opt, v, nullptr);
+//     }
+//     else
+//     {
+//         dbgmsg(".pref: Invalid " + opt + " value " + value + ": " + prefline);
+//         importresult |= 1;
+//     }
+// }
+
+// void SeqFile::prefSetHex(Identifier opt, int max, String value, String prefline)
+// {
+//     if (value.startsWithIgnoreCase("0x"))
+//         value = value.substring(2);
+//     else if (value.startsWith("$"))
+//         value = value.substring(1);
+//     int v = value.getHexValue32();
+//     if (isHex(value) && v >= 0 && v <= max)
+//     {
+//         midiopts.setProperty(opt, v, nullptr);
+//     }
+//     else
+//     {
+//         dbgmsg(".pref: Invalid " + opt + " value " + value + ": " + prefline);
+//         importresult |= 1;
+//     }
+// }
+
+// ////////////////////////////////////////////////////////////////////////////////
+// ////////////////////////////////// importMIDI //////////////////////////////////
+// ////////////////////////////////////////////////////////////////////////////////
+
+// int SeqFile::importMIDIV2(File midifile)
+// {
+//     if (!midifile.existsAsFile())
+//     {
+//         dbgmsg("File " + midifile.getFullPathName() + " does not exist!");
+//         return -1;
+//     }
+
+//     midiopts.setProperty("pref", false, nullptr);
+//     midiopts.setProperty("smartloop", true, nullptr);
+//     midiopts.setProperty("reladdr", false, nullptr);
+//     midiopts.setProperty("flstudio", true, nullptr);
+//     midiopts.setProperty("mutebhv", 0x80, nullptr);
+//     midiopts.setProperty("mutescale", 0x32, nullptr);
+//     midiopts.setProperty("mastervol", 0x58, nullptr);
+
+//     midiopts.setProperty("usecalls", true, nullptr);
+//     midiopts.setProperty("callonlylayer", false, nullptr);
+//     midiopts.setProperty("useloops", true, nullptr);
+//     midiopts.setProperty("delta_vel", 5.0f, nullptr);
+//     midiopts.setProperty("delta_gate", 3.0f, nullptr);
+//     midiopts.setProperty("delta_cc", 1.0f, nullptr);
+//     midiopts.setProperty("q_volpan_amp", 2.0f, nullptr);
+//     midiopts.setProperty("q_pitch_amp", 1.0f, nullptr);
+//     midiopts.setProperty("q_other_amp", 1.0f, nullptr);
+
+//     FileInputStream fis(midifile);
+//     MidiFile mfile;
+//     mfile.readFrom(fis);
+//     seqname = midifile.getFileNameWithoutExtension();
+//     // Read pref
+//     do
+//     {
+//         if (!(bool)midiopts.getProperty("pref"))
+//             break;
+//         File preffile = midifile.getSiblingFile(seqname + ".pref");
+//         if (!preffile.existsAsFile())
+//         {
+//             dbgmsg("Requested reading .pref file, but " + preffile.getFullPathName() + " does not exist!");
+//             importresult |= 1;
+//             break;
+//         }
+//         std::vector<String> mergequantcmds{"delta_vel", "delta_gate", "delta_cc",
+//                                            "q_volpan_amp", "q_pitch_amp", "q_other_amp"};
+//         for (String s : mergequantcmds)
+//             midiopts.setProperty(s, 0, nullptr);
+//         FileInputStream preffis(preffile);
+//         while (!preffis.isExhausted())
+//         {
+//             String prefline = preffis.readNextLine().trim();
+//             if (prefline.startsWith(";") || prefline.isEmpty())
+//                 continue;
+//             if (prefline.startsWith("END"))
+//                 break;
+//             String key = prefline.upToFirstOccurrenceOf(":", false, false).trim();
+//             String value = prefline.fromFirstOccurrenceOf(":", false, false).trim();
+//             if (key.isEmpty() || value.isEmpty())
+//             {
+//                 dbgmsg("Invalid syntax in .pref file: " + prefline);
+//                 importresult |= 1;
+//                 continue;
+//             }
+//             if (key.equalsIgnoreCase("notemode"))
+//             {
+//                 if (!value.equalsIgnoreCase("b,b,b,b,b,b,b,b,b,b,b,b,b,b,b,b"))
+//                 {
+//                     dbgmsg(".pref: Unsupported notemode (non large notes): " + value);
+//                     importresult |= 1;
+//                 }
+//             }
+//             else if (key.equalsIgnoreCase("backupmake") || key.equalsIgnoreCase("bar_write") || key.equalsIgnoreCase("forthed_noteon"))
+//             {
+//                 dbgmsg(".pref: seq64 does not support canon \"" + key + "\" pref command");
+//             }
+//             else if (key.equalsIgnoreCase("initwait_cut") || key.equalsIgnoreCase("cutdelay"))
+//             {
+//                 prefSetBool("cutdelay", value, prefline);
+//                 // TODO actually support this
+//             }
+//             else if (key.equalsIgnoreCase("mus_timebase"))
+//             {
+//                 if (value != "48")
+//                 {
+//                     dbgmsg(".pref: Incorrect MIDI timebase " + value + "!");
+//                     return 2;
+//                 }
+//             }
+//             else if (key.equalsIgnoreCase("total_poli"))
+//             {
+//                 dbgmsg(".pref: info: requested polyphony " + value);
+//             }
+//             else if (key.equalsIgnoreCase("groop_volume") || key.equalsIgnoreCase("mastervol"))
+//             {
+//                 prefSetInt("mastervol", 255, value, prefline);
+//             }
+//             else if (key.equalsIgnoreCase("init_dummywait") || key.equalsIgnoreCase("extradelay"))
+//             {
+//                 prefSetInt("extradelay", 0x7FFF, value, prefline);
+//                 // TODO actually support this
+//             }
+//             else if (key.equalsIgnoreCase("pause_set") || key.equalsIgnoreCase("mutebhv"))
+//             {
+//                 value.replaceCharacter('\t', ' ');
+//                 String bhv = value.upToFirstOccurrenceOf(" ", false, false).trim();
+//                 String scale = value.fromFirstOccurrenceOf(" ", false, false).trim();
+//                 if (bhv.equalsIgnoreCase("stop") || bhv.equalsIgnoreCase("SEQSTOP"))
+//                 {
+//                     midiopts.setProperty("mutebhv", 0x80, nullptr);
+//                 }
+//                 else if (bhv.equalsIgnoreCase("VOICECUT"))
+//                 {
+//                     midiopts.setProperty("mutebhv", 0x40, nullptr);
+//                 }
+//                 else if (bhv.equalsIgnoreCase("gaindown") || bhv.equalsIgnoreCase("VOLDOWN"))
+//                 {
+//                     midiopts.setProperty("mutebhv", 0x20, nullptr);
+//                 }
+//                 else if (bhv.equalsIgnoreCase("ENTRYOFF"))
+//                 {
+//                     midiopts.setProperty("mutebhv", 0x10, nullptr);
+//                 }
+//                 else if (bhv.equalsIgnoreCase("FREEZE"))
+//                 {
+//                     midiopts.setProperty("mutebhv", 0x08, nullptr);
+//                 }
+//                 else
+//                 {
+//                     prefSetHex("mutebhv", 255, bhv, prefline);
+//                 }
+//                 if (scale.isEmpty())
+//                 {
+//                     dbgmsg(".pref: Missing mute scale: " + prefline);
+//                     importresult |= 1;
+//                 }
+//                 else
+//                 {
+//                     prefSetInt("mutescale", 255, scale, prefline);
+//                 }
+//             }
+//             else if (key.equalsIgnoreCase("compress"))
+//             {
+//                 midiopts.setProperty("callonlylayer", true, nullptr);
+//                 midiopts.setProperty("useloops", false, nullptr);
+//                 if (value == "0")
+//                 {
+//                     midiopts.setProperty("usecalls", false, nullptr);
+//                 }
+//                 else if (value == "1")
+//                 {
+//                     midiopts.setProperty("usecalls", true, nullptr);
+//                 }
+//                 else
+//                 {
+//                     dbgmsg(".pref: Unknown compress setting: " + value);
+//                     importresult |= 1;
+//                 }
+//             }
+//             else
+//             {
+//                 std::vector<String> boolparams{"smartloop", "reladdr",
+//                                                "usecalls", "callonlylayer", "useloops"};
+//                 bool done = false;
+//                 for (String s : boolparams)
+//                 {
+//                     if (key.equalsIgnoreCase(s))
+//                     {
+//                         prefSetBool(s, value, prefline);
+//                         done = true;
+//                         break;
+//                     }
+//                 }
+//                 if (done)
+//                     continue;
+//                 for (String s : mergequantcmds)
+//                 {
+//                     if (key.equalsIgnoreCase(s))
+//                     {
+//                         prefSetInt(s, 20, value, prefline);
+//                         done = true;
+//                         break;
+//                     }
+//                 }
+//                 if (done)
+//                     continue;
+//                 dbgmsg(".pref: Unknown command: " + prefline);
+//                 importresult |= 1;
+//             }
+//         }
+//     } while (false);
+//     //
+//     dbgmsg("IMPORTING MIDI FILE");
+//     importresult = 0;
+//     bool reladdr = (bool)midiopts.getProperty("reladdr", false);
+//     const int midi_basenote = 21;
+//     MidiMessage msg;
+//     MidiMessage *msgptr;
+//     int layer;
+//     int timestamp = 0;
+//     // Reorganize
+//     dbgmsg("Reorganizing MIDI file into master track and tracks for each channel...");
+//     int master_ppqn = mfile.getTimeFormat();
+//     if (master_ppqn <= 0)
+//     {
+//         dbgmsg("MIDI files with SMPTE time format are not supported, only PPQN format!");
+//         importresult = 2;
+//         return importresult;
+//     }
+//     else
+//     {
+//         dbgmsg("Converting " + String(master_ppqn) + " to 48 ppqn");
+//     }
+//     double ticks_multiplier = 48.0 / (double)master_ppqn;
+//     // Check for extremely short notes
+//     for (int track = 0; track < mfile.getNumTracks(); track++)
+//     {
+//         MidiMessageSequence trk(*mfile.getTrack(track));
+//         trk.updateMatchedPairs();
+//         for (int i = 0; i < trk.getNumEvents(); ++i)
+//         {
+//             msgptr = &trk.getEventPointer(i)->message;
+//             if (msgptr->isNoteOn())
+//             {
+//                 if ((trk.getTimeOfMatchingKeyUp(i) - msgptr->getTimeStamp()) * ticks_multiplier < 1.0)
+//                 {
+//                     dbgmsg("Warning, extremely short note (pitch " + String(msgptr->getNoteNumber()) + ", chn " + String(msgptr->getChannel()) + ", quarter note ~" + String(msgptr->getTimeStamp() * ticks_multiplier / 48.0) + "), may be dropped or corrupt nearby note ons/offs!");
+//                 }
+//             }
+//         }
+//     }
+//     // Put all events into master track
+//     double last_timestampd = mfile.getLastTimestamp();
+//     std::unique_ptr<MidiMessageSequence> mastertrack;
+//     mastertrack.reset(new MidiMessageSequence());
+//     for (int track = 0; track < mfile.getNumTracks(); track++)
+//     {
+//         mastertrack->addSequence(*mfile.getTrack(track), 0.0, 0.0, last_timestampd + 1.0);
+//         mastertrack->updateMatchedPairs();
+//     }
+//     // Scale all events to N64 PPQN
+//     for (int m = mastertrack->getNumEvents() - 1; m >= 0; m--)
+//     {
+//         msgptr = &mastertrack->getEventPointer(m)->message;
+//         msgptr->setTimeStamp(msgptr->getTimeStamp() * ticks_multiplier);
+//     }
+//     // Ensure events are propertly in order
+//     mastertrack.reset(ensureSimulMsgsInOrder(*mastertrack));
+//     // Get new last timestamp
+//     last_timestampd *= ticks_multiplier;
+//     int last_timestamp = (int)(last_timestampd);
+//     dbgmsg("Last timestamp t" + String(last_timestamp) + ", i.e. " + String(last_timestamp / 48) + " beats or " + String(last_timestamp / 192) + " measures 4/4");
+//     // Put channel events into chantracks
+//     OwnedArray<MidiMessageSequence> chantracks;
+//     for (int channel = 0; channel < 16; channel++)
+//     {
+//         chantracks.add(new MidiMessageSequence());
+//         for (int m = 0; m < mastertrack->getNumEvents(); ++m)
+//         {
+//             msg = mastertrack->getEventPointer(m)->message;
+//             if (msg.getChannel() == channel + 1 && (!(bool)midiopts.getProperty("flstudio") ||
+//                                                     !msg.isController() ||
+//                                                     !(msg.getControllerNumber() == 114 || msg.getControllerNumber() == 115)))
+//             {
+//                 chantracks[channel]->addEvent(msg);
+//                 mastertrack->deleteEvent(m, false);
+//                 --m;
+//             }
+//         }
+//         mastertrack->updateMatchedPairs();
+//         chantracks[channel]->updateMatchedPairs();
+//     }
+//     // Find sections
+//     dbgmsg("Finding sections...");
+//     Array<int> tsectimes;
+//     tsectimes.add(0);
+//     tsecnames.clear();
+//     tsecnames.add("start");
+//     int lastCC115 = -1;
+//     for (int m = 0; m < mastertrack->getNumEvents(); m++)
+//     {
+//         msg = mastertrack->getEventPointer(m)->message;
+//         String metatext;
+//         if (msg.isTextMetaEvent())
+//         {
+//             metatext = msg.getTextFromTextMetaEvent();
+//             int metatype = msg.getMetaEventType();
+//             if (metatype == 0x06)
+//             {
+//                 if (!metatext.startsWithIgnoreCase("Section") &&
+//                     !metatext.startsWithIgnoreCase("loop"))
+//                     continue;
+//             }
+//             else if (metatype == 0x01)
+//             {
+//                 if (!metatext.startsWithIgnoreCase("block:"))
+//                     continue;
+//             }
+//             else
+//             {
+//                 continue;
+//             }
+//         }
+//         else if ((bool)midiopts.getProperty("flstudio") && msg.isController() && msg.getControllerNumber() == 115)
+//         {
+//             if (msg.getControllerValue() == 0 || msg.getControllerValue() == lastCC115)
+//             {
+//                 dbgmsg("Ignoring spurious CC 115 value " + String(msg.getControllerValue()) + " inserted by FL Studio");
+//                 continue;
+//             }
+//             if (msg.getChannel() != 1)
+//             {
+//                 dbgmsg("FL Studio mode, received CC 115 (temporal section marker) not on channel 1 (0 zero-indexed)! Ignoring!");
+//                 importresult |= 1;
+//                 continue;
+//             }
+//             lastCC115 = msg.getControllerValue();
+//             metatext = "SectionX";
+//         }
+//         else
+//         {
+//             continue;
+//         }
+//         timestamp = msg.getTimeStamp();
+//         if (tsectimes[tsectimes.size() - 1] != timestamp)
+//         {
+//             tsectimes.add(msg.getTimeStamp());
+//             tsecnames.add("blahblahwillbeoverwritten");
+//         }
+//         if (metatext.startsWithIgnoreCase("Section"))
+//         {
+//             metatext = "tsec" + String(tsectimes.size() - 1);
+//         }
+//         else if (metatext.startsWithIgnoreCase("block:"))
+//         {
+//             metatext = metatext.substring(6);
+//         }
+//         metatext = metatext.retainCharacters("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890_");
+//         tsecnames.set(tsectimes.size() - 1, metatext);
+//     }
+//     if (tsectimes.size() != tsecnames.size())
+//     {
+//         dbgmsg("tsections internal consistency error!");
+//         return 2;
+//     }
+//     if (tsectimes.size() <= 1)
+//     {
+//         dbgmsg("MIDI file had no sections (blocks) specified.");
+//     }
+//     // See if there are any empty channels (i.e. with no note ons)
+//     dbgmsg("Empty channels: ", false);
+//     Array<int> channelsused;
+//     uint16_t chanBitfield = 0;
+//     for (int channel = 0; channel < 16; channel++)
+//     {
+//         channelsused.add(-1);
+//         for (int m = 0; m < chantracks[channel]->getNumEvents(); m++)
+//         {
+//             msg = chantracks[channel]->getEventPointer(m)->message;
+//             if (msg.isNoteOn())
+//             {
+//                 channelsused.set(channel, channel);
+//                 break;
+//             }
+//         }
+//         chanBitfield >>= 1;
+//         if (channelsused[channel] < 0)
+//         {
+//             dbgmsg(String(channel) + ", ", false);
+//         }
+//         else
+//         {
+//             chanBitfield |= 0x8000;
+//         }
+//     }
+//     dbgmsg("[end]");
+//     // Figure out notelayers
+//     MidiMessageSequence *trk;
+//     MidiMessageSequence *layertrk;
+//     dbgmsg("Assigning notes to notelayers...");
+//     OwnedArray<MidiMessageSequence> layertracks;
+//     for (int channel = 0; channel < 16; channel++)
+//     {
+//         for (layer = 0; layer < max_layers; layer++)
+//         {
+//             layertracks.add(new MidiMessageSequence());
+//         }
+//     }
+//     bool too_many_notes;
+//     OwnedArray<LayerState> ls;
+//     const int ls_history = 4;
+//     for (layer = 0; layer < max_layers; layer++)
+//     {
+//         ls.add(new LayerState(ls_history));
+//     }
+//     int sec;
+//     int bestlayer;
+//     float bestlayermse, thislayermse;
+//     for (int channel = 0; channel < 16; channel++)
+//     {
+//         trk = chantracks[channel];
+//         if (channelsused[channel] < 0)
+//             continue;
+//         too_many_notes = false;
+//         sec = -1;
+//         for (int m = 0; m < trk->getNumEvents(); m++)
+//         {
+//             msg = trk->getEventPointer(m)->message;
+//             // See what section we're in, and clear LayerStates if it's a new section
+//             int i;
+//             for (i = sec; i < tsectimes.size() - 1; ++i)
+//             {
+//                 if (tsectimes[i + 1] > msg.getTimeStamp() ||
+//                     (tsectimes[i + 1] == msg.getTimeStamp() && msg.isNoteOff()))
+//                 {
+//                     // We haven't moved to that section yet
+//                     break;
+//                 }
+//             }
+//             if (sec != i)
+//             {
+//                 sec = i;
+//                 // Clear layer state since we're in a new section
+//                 for (layer = 0; layer < max_layers; layer++)
+//                 {
+//                     if (ls[layer]->isInUse())
+//                     {
+//                         // TODO test this, see if it actually works correctly
+//                         dbgmsg("Section boundary (e.g. loop point) in the middle of a note, note " + String(ls[layer]->curNote()) + " channel " + String(channel) + "! Cutting off the note!");
+//                         int j;
+//                         for (j = m + 1; j < trk->getNumEvents(); ++j)
+//                         {
+//                             MidiMessage msg2 = trk->getEventPointer(j)->message;
+//                             if (msg2.isNoteOff() && ls[layer]->curNote() == msg2.getNoteNumber())
+//                             {
+//                                 layertracks[(max_layers * channel) + layer]->addEvent(msg2);
+//                                 trk->deleteEvent(j, false);
+//                                 j = -2;
+//                                 break;
+//                             }
+//                         }
+//                         if (j >= 0)
+//                         {
+//                             dbgmsg("Trying to fix section boundary in middle of note failed, broken sequence!");
+//                         }
+//                     }
+//                     ls[layer]->clear();
+//                 }
+//             }
+//             // Assign each note on/off pair to note layer
+//             if (msg.isNoteOn())
+//             {
+//                 // Check for duplicate
+//                 for (layer = 0; layer < max_layers; layer++)
+//                 {
+//                     if (ls[layer]->curNote() == msg.getNoteNumber())
+//                     {
+//                         dbgmsg("Duplicate note on in chan " + String(channel) + " t= " + String(msg.getTimeStamp()) + ", ignoring");
+//                         importresult |= 1;
+//                         layer = -2;
+//                         break;
+//                     }
+//                 }
+//                 if (layer < 0)
+//                     continue;
+//                 // Find best spot to put note
+//                 bestlayermse = 10000000000.0f;
+//                 bestlayer = -1;
+//                 for (layer = 0; layer < max_layers; ++layer)
+//                 {
+//                     if (ls[layer]->isInUse())
+//                         continue;
+//                     // Calculate the weighted mean-squared error between the new note and the layer's history
+//                     thislayermse = ls[layer]->mse(msg.getNoteNumber());
+//                     if (thislayermse < bestlayermse)
+//                     {
+//                         bestlayer = layer;
+//                         bestlayermse = thislayermse;
+//                     }
+//                 }
+//                 if (bestlayer < 0)
+//                 {
+//                     // No layer was free
+//                     if (!too_many_notes)
+//                     {
+//                         dbgmsg("Channel " + String(channel) + " has more than " + String(max_layers) + " notes on at a time (at t=" + String(msg.getTimeStamp()) + ")!");
+//                         too_many_notes = true;
+//                         importresult |= 1;
+//                     }
+//                 }
+//                 else
+//                 {
+//                     // We got a layer to assign it to
+//                     layertracks[(max_layers * channel) + bestlayer]->addEvent(msg);
+//                     ls[bestlayer]->writeNote(msg.getNoteNumber());
+//                 }
+//             }
+//             else if (msg.isNoteOff())
+//             {
+//                 // Check for existing note
+//                 for (layer = 0; layer < max_layers; layer++)
+//                 {
+//                     if (ls[layer]->curNote() == msg.getNoteNumber())
+//                     {
+//                         layertracks[(max_layers * channel) + layer]->addEvent(msg);
+//                         ls[layer]->writeNote(-1);
+//                         layer = -2;
+//                         break;
+//                     }
+//                 }
+//                 if (layer < 0)
+//                     continue;
+//                 if (!too_many_notes)
+//                 {
+//                     dbgmsg("Note off (ch=" + String(channel) + " note=" + String(msg.getNoteNumber()) + " time=" + String(msg.getTimeStamp()) + ") received for note that is not on!");
+//                     too_many_notes = true;
+//                     importresult |= 1;
+//                 }
+//             }
+//         }
+//         // Check final state
+//         for (layer = 0; layer < max_layers; layer++)
+//         {
+//             if (ls[layer]->isInUse())
+//             {
+//                 dbgmsg("Chan " + String(channel) + " layer " + String(layer) + " left hanging! Fixing...");
+//                 importresult |= 1;
+//                 msg = MidiMessage::noteOff(channel + 1, ls[layer]->curNote());
+//                 msg.setTimeStamp(last_timestamp);
+//                 layertracks[(max_layers * channel) + layer]->addEvent(msg);
+//             }
+//         }
+//         // Update matched pairs
+//         for (layer = 0; layer < max_layers; layer++)
+//         {
+//             layertrk = layertracks[(max_layers * channel) + layer];
+//             layertrk->sort();
+//             layertrk->updateMatchedPairs();
+//             if (layertrk->getNumEvents() & 1)
+//             {
+//                 dbgmsg("Chan " + String(channel) + " lyr " + String(layer) + " track has " + String(layertrk->getNumEvents()) + " (odd number of) events!");
+//                 importresult |= 1;
+//             }
+//         }
+//     }
+//     // Generate Audioseq data
+//     structure = ValueTree("structure");
+//     ValueTree want, want2, section, newsec;
+//     Random::getSystemRandom().setSeedRandomly();
+//     //=======================================================================
+//     // Sequence header
+//     //=======================================================================
+//     dbgmsg("Creating sequence header", false);
+//     int num_tsections = tsectimes.size();
+//     tsectimes.add(last_timestamp);
+//     double newtempo;
+//     int tempolasttime = -100000, tempolastval = -100000;
+//     int t = 0;
+//     // Create section for header
+//     int cmd = 0, value;
+//     section = ValueTree("seqhdr");
+//     section.setProperty(idSType, 0, nullptr);
+//     structure.appendChild(section, nullptr);
+//     // End of Data
+//     want = wantAction("End of Data", 0);
+//     section.addChild(createCommand(want), 0, nullptr);
+//     // Mute Behavior (previously Sequence Format) (D3 20)
+//     value = (int)midiopts.getProperty("mutebhv", 0x20);
+//     want = wantAction("Mute Behavior", 0);
+//     wantProperty(want, "Value", value);
+//     section.addChild(createCommand(want), cmd, nullptr);
+//     cmd++;
+//     // Mute Scale (previously Sequence Type) (D5 32)
+//     value = (int)midiopts.getProperty("mutescale", 0x32);
+//     want = wantAction("Mute Scale", 0);
+//     wantProperty(want, "Value", value);
+//     section.addChild(createCommand(want), cmd, nullptr);
+//     cmd++;
+//     // Channel Enable (D7 XXXX)
+//     want = wantAction("Channel Enable", 0);
+//     wantProperty(want, "Bitfield", chanBitfield);
+//     section.addChild(createCommand(want), cmd, nullptr);
+//     cmd++;
+//     int addmstrvol_cmd = -1;
+//     bool hadmastervol = false;
+//     Array<int> tsechashes;
+//     // Add events from master track
+//     int sectimeidx = 0;
+//     bool done = false;
+//     for (int m = 0;; ++m)
+//     {
+//         if (m >= mastertrack->getNumEvents())
+//         {
+//             done = true;
+//         }
+//         else
+//         {
+//             msg = mastertrack->getEventPointer(m)->message;
+//             timestamp = msg.getTimeStamp();
+//         }
+//         // Insert channel pointers for each section
+//         // sectimeidx is the *upcoming* section boundary, not the current section time is in
+//         for (; sectimeidx < num_tsections; sectimeidx++)
+//         { // Don't execute this for the boundary at the end of the piece
+//             if (!done && timestamp < tsectimes[sectimeidx])
+//                 break; // Still more commands before section boundary
+//             // dbgmsg("Section " + String(sectimeidx) + " starting at " + String(tsectimes[sectimeidx]));
+//             dbgmsg(".", false);
+//             // Get up to the time
+//             advanceToTimestamp(section, 0, cmd, t, tsectimes[sectimeidx]);
+//             // Channel pointers for new section
+//             for (int channel = 0; channel < 16; channel++)
+//             {
+//                 if (channelsused[channel] < 0)
+//                     continue;
+//                 // Create section for channel
+//                 newsec = ValueTree("chanhdr");
+//                 newsec.setProperty(idSType, 1, nullptr);
+//                 newsec.setProperty(idChannel, channel, nullptr);
+//                 newsec.setProperty(idTSection, sectimeidx, nullptr);
+//                 structure.appendChild(newsec, nullptr);
+//                 // Add End of Data command to channel
+//                 want = wantAction("End of Data", 1);
+//                 newsec.appendChild(createCommand(want), nullptr);
+//                 // Add Ptr Channel Header to seq hdr
+//                 want = wantAction("Ptr Channel Header", 0);
+//                 wantProperty(want, "Channel", channel);
+//                 wantProperty(want, reladdr ? "Relative Address" : "Absolute Address", 0xFFFF);
+//                 want = createCommand(want);
+//                 want.setProperty(idTargetSection, structure.getNumChildren() - 1, nullptr);
+//                 section.addChild(want, cmd, nullptr);
+//                 cmd++;
+//                 if (tsechashes.size() < sectimeidx + 1)
+//                 {
+//                     tsechashes.add(want.getProperty(idHash));
+//                     dbgmsg("tsec 0 chn cmd hash " + want.getProperty(idHash).toString());
+//                 }
+//             }
+//         }
+//         if (addmstrvol_cmd < 0)
+//             addmstrvol_cmd = cmd;
+//         if (done)
+//             break;
+//         // Determine command to execute
+//         want = ValueTree(); // Invalidate
+//         if (msg.isTempoMetaEvent())
+//         {
+//             newtempo = msg.getTempoSecondsPerQuarterNote();
+//             newtempo = 60 / newtempo;
+//             if ((int)newtempo != tempolastval && timestamp != tempolasttime)
+//             {
+//                 tempolastval = (int)newtempo;
+//                 tempolasttime = timestamp;
+//                 want = wantAction("Tempo", 0);
+//                 wantProperty(want, "Value", (int)newtempo);
+//                 want = createCommand(want);
+//             }
+//         }
+//         else if (msg.isSysEx())
+//         {
+//             if (msg.getSysExDataSize() == 6)
+//             {
+//                 const uint8_t *sysexdata = msg.getSysExData();
+//                 if (sysexdata[2] == 0x04 && sysexdata[3] == 0x01)
+//                 {
+//                     // Master volume
+//                     want = wantAction("Master Volume", 0);
+//                     wantProperty(want, "Value", sysexdata[5]);
+//                     want = createCommand(want);
+//                     hadmastervol = true;
+//                 }
+//             }
+//         }
+//         else if (msg.isController())
+//         {
+//             if ((bool)midiopts.getProperty("flstudio") && msg.getControllerNumber() == 114)
+//             {
+//                 if (msg.getChannel() != 1)
+//                 {
+//                     dbgmsg("FL Studio mode, received CC 114 (Master Volume) not on channel 1 (0 zero-indexed)! Ignoring!");
+//                     importresult |= 1;
+//                 }
+//                 else
+//                 {
+//                     want = wantAction("Master Volume", 0);
+//                     wantProperty(want, "Value", msg.getControllerValue());
+//                     want = createCommand(want);
+//                     hadmastervol = true;
+//                 }
+//             }
+//         }
+//         else if (msg.isTextMetaEvent())
+//         {
+//             String metatext = msg.getTextFromTextMetaEvent();
+//             if (msg.getMetaEventType() == 0x01 && metatext.startsWithIgnoreCase("jump:"))
+//             {
+//                 midiopts.setProperty("smartloop", false, nullptr);
+//                 String target = metatext.substring(5);
+//                 int tsec = tsecnames.indexOf(target, true);
+//                 if (tsec < 0)
+//                 {
+//                     dbgmsg("MIDI file contained jump to nonexistent tsection (block) " + target + "!");
+//                     importresult |= 1;
+//                 }
+//                 else
+//                 {
+//                     want = wantAction("Jump", 0);
+//                     wantProperty(want, reladdr ? "Relative Address" : "Absolute Address", 0xFFFF);
+//                     want = createCommand(want);
+//                     want.setProperty(idTargetSection, 0, nullptr);
+//                     want.setProperty(idTargetHash, tsechashes[tsec], nullptr);
+//                     dbgmsg("Canon MIDI jump to " + target + ", tsec " + String(tsec) + ", hash " + String(tsechashes[tsec]));
+//                 }
+//             }
+//         }
+//         if (want.isValid())
+//         {
+//             advanceToTimestamp(section, 0, cmd, t, timestamp);
+//             // Write command
+//             section.addChild(want, cmd, nullptr);
+//             cmd++;
+//         }
+//     }
+//     if (tsechashes.size() != num_tsections)
+//     {
+//         dbgmsg("tsections internal consistency error!");
+//         return 2;
+//     }
+//     // Get the time to the end
+//     advanceToTimestamp(section, 0, cmd, t, last_timestamp);
+//     // Loop to start
+//     if ((bool)midiopts.getProperty("smartloop", false))
+//     {
+//         want = wantAction("Jump", 0);
+//         wantProperty(want, reladdr ? "Relative Address" : "Absolute Address", 0xFFFF);
+//         want = createCommand(want);
+//         want.setProperty(idTargetSection, 0, nullptr);
+//         int targetsection = num_tsections == 1 ? 0 : 1;
+//         dbgmsg("Adding smart loop command to tsec " + String(targetsection));
+//         want.setProperty(idTargetHash, tsechashes[targetsection], nullptr);
+//         section.addChild(want, cmd, nullptr);
+//         cmd++;
+//     }
+//     // Channel Disable (D6 XXXX)
+//     want = wantAction("Channel Disable", 0);
+//     wantProperty(want, "Bitfield", chanBitfield);
+//     section.addChild(createCommand(want), cmd, nullptr);
+//     cmd++;
+//     // Master Volume
+//     if (!hadmastervol)
+//     {
+//         uint8_t defaultval = (int)midiopts.getProperty("mastervol", 0x58);
+//         if (defaultval > 0)
+//         {
+//             dbgmsg("No Master Volume sysex command in the MIDI, adding default 0x" + hex(defaultval));
+//             want = wantAction("Master Volume", 0);
+//             wantProperty(want, "Value", defaultval);
+//             section.addChild(createCommand(want), addmstrvol_cmd, nullptr);
+//             cmd++;
+//         }
+//     }
+//     //=======================================================================
+//     // Channels
+//     //=======================================================================
+//     dbgmsg("\nCreating channel headers", false);
+//     int starttime, endtime;
+//     int cc;
+//     // CC Bandwidth Reduction setup
+//     OwnedArray<CCTracker> ccstates;
+//     int qa = midiopts.getProperty("q_other_amp", 1);
+//     for (cc = 0; cc < 130; cc++)
+//     { // 128 is pitch, 129 is program
+//         ccstates.add(new CCTracker());
+//         ccstates[cc]->q_time = 0;
+//         ccstates[cc]->q_amp = qa;
+//     }
+//     ccstates[0]->q_amp = 0; // bank
+//     ccstates[128]->q_amp = midiopts.getProperty("q_pitch_amp", 1);
+//     ccstates[129]->q_amp = 0; // program
+//     qa = midiopts.getProperty("q_volpan_amp", 2);
+//     ccstates[7]->q_amp = qa;  // volume
+//     ccstates[11]->q_amp = qa; // expression
+//     ccstates[10]->q_amp = qa; // pan
+//     ccstates[8]->q_amp = qa;  // pan mix
+//     // Channel data
+//     for (sectimeidx = 0; sectimeidx < num_tsections; sectimeidx++)
+//     {
+//         starttime = tsectimes[sectimeidx];
+//         endtime = tsectimes[sectimeidx + 1];
+//         for (int channel = 0; channel < 16; channel++)
+//         {
+//             if (channelsused[channel] < 0)
+//                 continue;
+//             trk = chantracks[channel];
+//             // dbgmsg("Chn " + String(channel) + " sec " + String(sectimeidx) + " starting at t" + String(starttime));
+//             dbgmsg(".", false);
+//             // Find channel header
+//             for (sec = 0; sec < structure.getNumChildren(); sec++)
+//             {
+//                 section = structure.getChild(sec);
+//                 if ((int)section.getProperty(idSType, -1) == 1 && (int)section.getProperty(idChannel, -1) == channel && (int)section.getProperty(idTSection, -1) == sectimeidx)
+//                 {
+//                     break;
+//                 }
+//             }
+//             if (sec >= structure.getNumChildren())
+//             {
+//                 dbgmsg("Could not find channel header for ch " + String(channel) + ", section " + String(sectimeidx) + "!");
+//                 importresult |= 2;
+//                 break;
+//             }
+//             cmd = 0;
+//             // Set Long Notes, previously known as Chn Reset (C4)
+//             if (sectimeidx == 0)
+//             {
+//                 want = wantAction("Set Long Notes", 1);
+//                 section.addChild(createCommand(want), cmd, nullptr);
+//                 cmd++;
+//             }
+//             // Create track headers
+//             for (layer = 0; layer < max_layers; layer++)
+//             {
+//                 layertrk = layertracks[(max_layers * channel) + layer];
+//                 if (layertrk->getNumEvents() == 0)
+//                     continue;
+//                 // Create SeqData for layer
+//                 newsec = ValueTree("notelayer");
+//                 newsec.setProperty(idSType, 2, nullptr);
+//                 newsec.setProperty(idChannel, channel, nullptr);
+//                 newsec.setProperty(idLayer, layer, nullptr);
+//                 newsec.setProperty(idTSection, sectimeidx, nullptr);
+//                 structure.appendChild(newsec, nullptr);
+//                 // Add End of Data command to layer
+//                 want = wantAction("End of Data", 2);
+//                 newsec.appendChild(createCommand(want), nullptr);
+//                 // Add Ptr Note Layer command to channel
+//                 want = wantAction("Ptr Note Layer", 1);
+//                 wantProperty(want, "Note Layer", layer);
+//                 wantProperty(want, reladdr ? "Relative Address" : "Absolute Address", 0xFFFF);
+//                 want = createCommand(want);
+//                 want.setProperty(idTargetSection, structure.getNumChildren() - 1, nullptr);
+//                 section.addChild(want, cmd, nullptr);
+//                 cmd++;
+//             }
+
+//             int lastInstrument = 0;
+//             int last8bitWave = 0;
+//             bool chnPanMixExists = false;
+
+//             // Clear CC states
+//             for (cc = 0; cc < 130; cc++)
+//             { // 128 is pitch, 129 is program
+//                 ccstates[cc]->lasttime = -10000000;
+//                 ccstates[cc]->lastvalue = -10000000;
+//                 ccstates[cc]->lastcmd = ValueTree();
+//             }
+//             // Parse all commands
+//             t = starttime;
+//             for (int m = 0; m < trk->getNumEvents(); m++) {
+//                 msg = trk->getEventPointer(m)->message;
+//                 timestamp = msg.getTimeStamp();
+//                 if (timestamp < starttime)
+//                     continue;
+//                 // Only discard commands after section end if there's a section
+//                 // after this one
+//                 if (timestamp >= endtime && sectimeidx < num_tsections - 1)
+//                     continue;
+//                 // Determine command to execute
+//                 want = ValueTree(); // Invalidate
+//                 cc = -1;
+//                 value = 0;
+//                 if (msg.isController()) {
+//                     cc = msg.getControllerNumber();
+//                     value = msg.getControllerValue();
+//                 } else if (msg.isProgramChange()) {
+//                     cc = CC_INSTRUMENT;
+//                     value = msg.getProgramChangeNumber();
+//                     lastInstrument = value;
+//                     if (last8bitWave != 0) {
+//                         // Process this as an instrument command, then tack on the 8-bit instrument right after. This will safeguard for intentional instrument envelope loads.
+//                         if (ccstates[cc]->lasttime != timestamp || ccstates[cc]->lastvalue != value) {
+//                             ccstates[cc]->lastvalue = value;
+//                             ccstates[cc]->lasttime = timestamp;
+
+//                             want = wantAction(ccstates[cc]->action, 1);
+//                             wantProperty(want, "Value", value);
+//                             advanceToTimestamp(section, 1, cmd, t, timestamp);
+//                             // Write command
+//                             section.addChild(createCommand(want), cmd, nullptr);
+//                             cmd++;
+//                         }
+
+//                         value = last8bitWave + 0x7F;
+//                     } else if (ccstates[cc]->lasttime == timestamp && ccstates[cc]->lastvalue == value) {
+//                         continue; // No reason to repeat ourselves
+//                     }
+//                 } else if (msg.isPitchWheel()) {
+//                     cc = CC_PITCH_BEND;
+//                     value = msg.getPitchWheelValue();
+//                     value -= 0x2000;
+//                     value >>= 6;
+//                     value &= 0x000000FF;
+//                 } 
+
+//                 if (cc == CC_MODULATION) {
+//                     cc = CC_VIBRATO_EXTENT;
+//                 }
+
+//                 if (cc == CC_TRANSPOSE) {
+//                     value -= 64;
+//                 }
+
+//                 if (cc == CC_SOUND_BANK) {
+//                     want = wantAction(ccstates[cc]->action, 1);
+//                     wantProperty(want, "Value", value);
+//                     advanceToTimestamp(section, 1, cmd, t, timestamp);
+//                     // Write command
+//                     section.addChild(createCommand(want), cmd, nullptr);
+//                     cmd++;
+
+//                     cc = CC_INSTRUMENT;
+//                     if (last8bitWave == 0) {
+//                         value = lastInstrument;
+//                     } else {
+//                         value = last8bitWave + 0x7F;
+//                     }
+//                 }
+                
+//                 if (cc == CC_8BIT_WAVE_INDEX) {
+//                     cc = CC_INSTRUMENT;
+//                     last8bitWave = value;
+//                     if (last8bitWave == 0) {
+//                         value = lastInstrument;
+//                     } else {
+//                         value = last8bitWave + 0x7F;
+//                     }
+
+//                     if (ccstates[cc]->lasttime == timestamp && ccstates[cc]->lastvalue == value) {
+//                         continue; // No reason to repeat ourselves
+//                     }
+//                 }
+
+//                 if (cc == CC_CHN_LYR_PAN_MIX) {
+//                     chnPanMixExists = true; // Override drumset autodetection
+//                 }
+
+//                 // Channel/layer panning mix should prioritize layer panning in full, for use with autodetected drumset (if no manual specification is provided)
+//                 if (cc == CC_INSTRUMENT && !chnPanMixExists) {
+//                     if (value == 0x7F && ccstates[cc]->lastvalue != 0x7F) {
+//                         want = wantAction(ccstates[CC_CHN_LYR_PAN_MIX]->action, 1);
+//                         wantProperty(want, "Value", 0); // Force value of 0
+//                         advanceToTimestamp(section, 1, cmd, t, timestamp);
+//                         // Write command
+//                         section.addChild(createCommand(want), cmd, nullptr);
+//                         cmd++;
+//                     } else if (value != 0x7F && ccstates[cc]->lastvalue == 0x7F) {
+//                         want = wantAction(ccstates[CC_CHN_LYR_PAN_MIX]->action, 1);
+//                         wantProperty(want, "Value", 127); // Force value of 127
+//                         advanceToTimestamp(section, 1, cmd, t, timestamp);
+//                         // Write command
+//                         section.addChild(createCommand(want), cmd, nullptr);
+//                         cmd++;
+//                     }
+//                 }
+
+//                 if (cc < 0 || cc >= CC_TOTAL)
+//                     continue;
+//                 if (abs(value - ccstates[cc]->lastvalue) < ccstates[cc]->q_amp)
+//                     continue;
+//                 if (timestamp - ccstates[cc]->lasttime < ccstates[cc]->q_time)
+//                     continue;
+//                 ccstates[cc]->lastvalue = value;
+//                 ccstates[cc]->lasttime = timestamp;
+//                 if (ccstates[cc]->action != "") {
+//                     want = wantAction(ccstates[cc]->action, 1);
+//                     wantProperty(want, "Value", value);
+//                     advanceToTimestamp(section, 1, cmd, t, timestamp);
+//                     // Write command
+//                     section.addChild(createCommand(want), cmd, nullptr);
+//                     cmd++;
+//                 }
+//             }
+//             // Get the time to the end
+//             advanceToTimestamp(section, 1, cmd, t, endtime);
+//         }
+//     }
+//     //=======================================================================
+//     // Note Layers / Tracks
+//     //=======================================================================
+//     dbgmsg("\nCreating tracks", false);
+//     MidiMessage msg2, msg3;
+//     int timestamp2, timestamp3;
+//     int note, delay, transpose;
+//     trk = nullptr;
+//     for (int channel = 0; channel < 16; channel++)
+//     {
+//         if (channelsused[channel] < 0)
+//             continue;
+//         for (layer = 0; layer < max_layers; layer++)
+//         {
+//             layertrk = layertracks[(max_layers * channel) + layer];
+//             if (layertrk->getNumEvents() == 0)
+//                 continue;
+//             // dbgmsg("Layer " + String(layer) + " chn " + String(channel) + " with " + String(layertrk->getNumEvents()) + " events");
+//             dbgmsg(".", false);
+//             for (sectimeidx = 0; sectimeidx < num_tsections; sectimeidx++)
+//             {
+//                 starttime = tsectimes[sectimeidx];
+//                 endtime = tsectimes[sectimeidx + 1];
+//                 // dbgmsg("Sec " + String(sectimeidx) + " starting at t" + String(starttime));
+//                 dbgmsg(".", false);
+//                 // Find track
+//                 for (sec = 0; sec < structure.getNumChildren(); sec++)
+//                 {
+//                     section = structure.getChild(sec);
+//                     if ((int)section.getProperty(idSType, -1) == 2 && (int)section.getProperty(idChannel, -1) == channel && (int)section.getProperty(idLayer, -1) == layer && (int)section.getProperty(idTSection, -1) == sectimeidx)
+//                     {
+//                         break;
+//                     }
+//                 }
+//                 if (sec >= structure.getNumChildren())
+//                 {
+//                     dbgmsg("Could not find track data for layer " + String(layer) + " ch " + String(channel) + ", section " + String(sectimeidx) + "!");
+//                     importresult |= 2;
+//                     break;
+//                 }
+//                 cmd = 0;
+//                 // Parse all commands
+//                 int m;
+//                 t = starttime;
+//                 delay = -1;
+//                 transpose = 0;
+//                 timestamp3 = 0;
+//                 // Init transpose
+//                 want = wantAction("Layer Transpose", 2);
+//                 wantProperty(want, "Value", transpose);
+//                 ValueTree transposecmd = createCommand(want);
+//                 section.addChild(transposecmd, cmd, nullptr);
+//                 cmd++;
+//                 // Get first note on
+//                 for (m = 0; m < layertrk->getNumEvents(); m++)
+//                 {
+//                     msg3 = layertrk->getEventPointer(m)->message;
+//                     timestamp3 = msg3.getTimeStamp();
+//                     if (timestamp3 < starttime || (timestamp3 == starttime && msg3.isNoteOff()))
+//                         continue;
+//                     if (timestamp3 > endtime || (timestamp3 == endtime && !msg3.isNoteOff()))
+//                     {
+//                         m = layertrk->getNumEvents() + 1;
+//                         break;
+//                     }
+//                     if (msg3.isNoteOn())
+//                     {
+//                         break;
+//                     }
+//                 }
+//                 if (m >= layertrk->getNumEvents())
+//                 {
+//                     continue;
+//                 }
+//                 // Seek to timestamp
+//                 advanceToTimestamp(section, 2, cmd, t, timestamp3);
+//                 done = false;
+//                 while (!done)
+//                 {
+//                     msg = msg3;
+//                     timestamp = timestamp3;
+//                     // Get next thing, which should be corresponding note off
+//                     m++;
+//                     if (m >= layertrk->getNumEvents())
+//                     {
+//                         dbgmsg("Ran off end of track looking for note off!");
+//                         importresult |= 2;
+//                         break;
+//                     }
+//                     msg2 = layertrk->getEventPointer(m)->message;
+//                     if (!msg2.isNoteOff())
+//                     {
+//                         dbgmsg("Note Off out of order! Cancelling track import!");
+//                         importresult |= 2;
+//                         break;
+//                     }
+//                     timestamp2 = msg2.getTimeStamp();
+//                     if (timestamp2 >= endtime)
+//                     {
+//                         // Cut off note at section break
+//                         timestamp2 = endtime;
+//                         timestamp3 = endtime;
+//                         done = true;
+//                     }
+//                     else
+//                     {
+//                         // Get note on after that
+//                         m++;
+//                         if (m >= layertrk->getNumEvents())
+//                         {
+//                             timestamp3 = endtime;
+//                             done = true;
+//                         }
+//                         else
+//                         {
+//                             msg3 = layertrk->getEventPointer(m)->message;
+//                             if (!msg3.isNoteOn())
+//                             {
+//                                 dbgmsg("Note On out of order! Cancelling track import!");
+//                                 importresult |= 2;
+//                                 break;
+//                             }
+//                             timestamp3 = msg3.getTimeStamp();
+//                         }
+//                         if (timestamp3 >= endtime)
+//                         {
+//                             // End section after this note
+//                             timestamp3 = endtime;
+//                             done = true;
+//                         }
+//                     }
+//                     if (timestamp2 == timestamp && timestamp3 == timestamp)
+//                     {
+//                         // The next note is at the same time, just skip to it
+//                         dbgmsg("Zero-length note with no delay afterwards in chn " + String(channel) + " ly " + String(layer) + " at t=" + String(timestamp) + ", discarding!");
+//                         importresult |= 1;
+//                         continue;
+//                     }
+//                     // Create note command
+//                     want = wantAction("Note", 2);
+//                     wantProperty(want, "Velocity", msg.getVelocity());
+//                     // Note
+//                     note = msg.getNoteNumber() - transpose - midi_basenote;
+//                     if (note < 0 || note >= 0x40)
+//                     {
+//                         if (note < 0)
+//                         {
+//                             transpose -= 12 * (((0 - note) / 12) + 1);
+//                         }
+//                         else
+//                         {
+//                             transpose += 12 * (((note - 0x40) / 12) + 1);
+//                         }
+//                         note = msg.getNoteNumber() - transpose - midi_basenote;
+//                         if (transposecmd.isValid())
+//                         {
+//                             transposecmd.getChildWithProperty(idMeaning, "Value").setProperty(idValue, transpose, nullptr);
+//                         }
+//                         else
+//                         {
+//                             want2 = wantAction("Layer Transpose", 2);
+//                             wantProperty(want2, "Value", transpose);
+//                             section.addChild(createCommand(want2), cmd, nullptr);
+//                             cmd++;
+//                         }
+//                     }
+//                     wantProperty(want, "Note", note);
+//                     // Delay
+//                     delay = timestamp3 - timestamp;
+//                     if (delay >= 48 * 2 && ((timestamp2 - timestamp) * 0x100 / delay) < 0x08)
+//                     {
+//                         // Full note and then timestamp
+//                         wantProperty(want, "Delay", timestamp2 - timestamp);
+//                         wantProperty(want, "Gate Time", 0);
+//                         section.addChild(createCommand(want), cmd, nullptr);
+//                         cmd++;
+//                         advanceToTimestamp(section, 2, cmd, timestamp2, timestamp3);
+//                     }
+//                     else
+//                     {
+//                         wantProperty(want, "Delay", delay);
+//                         // Gate
+//                         if (delay == 0)
+//                         {
+//                             value = 0;
+//                         }
+//                         else
+//                         {
+//                             value = (timestamp3 - timestamp2) * 0x100 / delay;
+//                             if (value > 0xFF)
+//                             {
+//                                 // Zero-length note, make it a small length instead
+//                                 dbgmsg("Zero-length note in chn " + String(channel) + " ly " + String(layer) + " at t=" + String(timestamp) + "! Making small length instead...");
+//                                 importresult |= 1;
+//                                 value = 0xFF;
+//                             }
+//                         }
+//                         wantProperty(want, "Gate Time", value);
+//                         // Write note
+//                         section.addChild(createCommand(want), cmd, nullptr);
+//                         cmd++;
+//                     }
+//                     // Count time
+//                     t += delay;
+//                     transposecmd = ValueTree();
+//                 }
+//                 // Get the time to the end
+//                 advanceToTimestamp(section, 2, cmd, t, endtime);
+//             }
+//         }
+//     }
+//     //=======================================================================
+//     // Optimization
+//     //=======================================================================
+//     optimizeV2();
+//     reduceTrackNotes();
+//     // Done
+//     dbgmsg("\n----------------------------------------------------------\nDone!!!");
+//     return importresult;
+// }
+
+// void SeqFile::optimizeV2()
+// {
+//     int sec1, sec2;
+//     int stype1, stype2;
+//     int numcmds1, numcmds2;
+//     ValueTree section1, section2;
+//     int cmd1, cmd2, cmd3, cmd4;
+//     ValueTree command1, command2, command3, command4;
+//     String action1, action2, action3, action4;
+//     // Delete mostly-empty sections (with no meaningful data)
+//     // Empty tracks contain a Layer Transpose command and a End of Data command
+//     for (sec1 = 0; sec1 < structure.getNumChildren(); ++sec1)
+//     {
+//         section1 = structure.getChild(sec1);
+//         if ((int)section1.getProperty(idSType, -1) != 2)
+//             continue;
+//         if (section1.getNumChildren() != 2)
+//             continue;
+//         if (section1.getChild(0).getProperty(idAction, "No Action").toString() != "Layer Transpose")
+//             continue;
+//         if (section1.getChild(1).getProperty(idAction, "No Action").toString() != "End of Data")
+//             continue;
+//         // Found it, delete this section
+//         deleteSection(sec1);
+//         --sec1;
+//     }
+//     // Empty channels contain a Timestamp command and a End of Data command
+//     for (sec1 = 0; sec1 < structure.getNumChildren(); ++sec1)
+//     {
+//         section1 = structure.getChild(sec1);
+//         if ((int)section1.getProperty(idSType, -1) != 1)
+//             continue;
+//         if (section1.getNumChildren() != 2)
+//             continue;
+//         if (section1.getChild(0).getProperty(idAction, "No Action").toString() != "Delay")
+//             continue;
+//         if (section1.getChild(1).getProperty(idAction, "No Action").toString() != "End of Data")
+//             continue;
+//         // Found it, delete this section
+//         deleteSection(sec1);
+//         --sec1;
+//     }
+//     // Check if we want loop or call optimizations
+//     bool reladdr = (bool)midiopts.getProperty("reladdr", false);
+//     bool useCalls = midiopts.getProperty("usecalls", true);
+//     bool callOnlyLayer = midiopts.getProperty("callonlylayer", false);
+//     bool useLoops = midiopts.getProperty("useloops", true);
+//     if (!useCalls && !useLoops)
+//     {
+//         dbgmsg("\nNo loop or call optimization selected.");
+//         return;
+//     }
+//     // Check if loops need to be limited to 255 iterations
+//     int maxloopcount = getLargestCommandRange(0, "Loop Start", "Loop Count") - 1;
+//     dbgmsg("\nMaximum of " + String(maxloopcount) + " loop iterations");
+//     //
+//     int cmdafter;
+//     bool flag;
+//     int loopCount;
+//     int numCmdsDelete;
+//     //
+//     ValueTree want, want2, param;
+//     int cctype, cclast, ccdir;
+//     if (useLoops)
+//     {
+//         dbgmsg("\nLooking for data to loop");
+//         for (sec1 = 0; sec1 < structure.getNumChildren(); sec1++)
+//         {
+//             section1 = structure.getChild(sec1);
+//             stype1 = section1.getProperty(idSType, -1);
+//             numcmds1 = section1.getNumChildren();
+//             // dbgmsg("Examining section " + String(sec1) + " (stype == " + String(stype1) + "), " + String(numcmds1) + " commands");
+//             dbgmsg(".", false);
+//             // Pick a command
+//             for (cmd1 = 0; cmd1 < numcmds1 - 1; cmd1++)
+//             {
+//                 command1 = section1.getChild(cmd1);
+//                 action1 = command1.getProperty(idAction, "No Action");
+//                 // dbgmsg("----Command " + String(cmd1) + "(" + action1 + ")");
+//                 // Don't loop pointers or no actions
+//                 if (action1 == "No Action" || action1 == "End of Data" || action1 == "Jump" || action1 == "Branch" || action1 == "Ptr Channel Header" || action1 == "Ptr Note Layer")
+//                 {
+//                     continue;
+//                 }
+//                 // See if this command repeats later in the track, for loops
+//                 for (cmd2 = cmd1 + 1; cmd2 < numcmds1 - 1; cmd2++)
+//                 {
+//                     command2 = section1.getChild(cmd2);
+//                     if (isCloseEnoughV2(command1, command2, true))
+//                     {
+//                         // See if everything is the same in between
+//                         flag = true;
+//                         cmd3 = cmd1 + 1;
+//                         cmd4 = cmd2 + 1;
+//                         while (cmd3 < cmd2)
+//                         {
+//                             if (cmd4 >= numcmds1)
+//                             {
+//                                 flag = false;
+//                                 break;
+//                             }
+//                             if (!isCloseEnoughV2(section1.getChild(cmd3), section1.getChild(cmd4), true))
+//                             {
+//                                 flag = false;
+//                                 break;
+//                             }
+//                             cmd3++;
+//                             cmd4++;
+//                         }
+//                         if (!flag)
+//                             continue;
+//                         // We have a loop!
+//                         // dbgmsg("Sec " + String(sec1) + ": found loopable data from cmds " + String(cmd1) + " to " + String(cmd2));
+//                         // Check if the contents of the loop are solely timestamps and one kind of CC,
+//                         // and the CC values are monotonically going in one direction
+//                         flag = true;
+//                         cctype = -1;
+//                         ccdir = 0;
+//                         cclast = -1;
+//                         for (cmd3 = cmd1; cmd3 < cmd2 && flag; ++cmd3)
+//                         {
+//                             command3 = section1.getChild(cmd3);
+//                             action3 = command3.getProperty(idAction, "No Action");
+//                             if (action3 == "Delay")
+//                             {
+//                                 // do nothing
+//                             }
+//                             else if (action3 == "CC or CC Group")
+//                             {
+//                                 for (int j = 0; j < command3.getNumChildren() && flag; ++j)
+//                                 {
+//                                     param = command3.getChild(j);
+//                                     if (param.getProperty(idMeaning).toString() != "CC")
+//                                         continue;
+//                                     int newcctype = param.getProperty(idCC);
+//                                     if (cctype < 0)
+//                                     {
+//                                         cctype = newcctype;
+//                                         cclast = param.getProperty(idValue, -1234);
+//                                     }
+//                                     else if (cctype == newcctype)
+//                                     {
+//                                         int ccthis = param.getProperty(idValue, -5678);
+//                                         if (ccdir == 0)
+//                                         {
+//                                             if (ccthis < cclast)
+//                                                 ccdir = -1;
+//                                             else if (ccthis > cclast)
+//                                                 ccdir = 1;
+//                                         }
+//                                         else if (ccdir == 1)
+//                                         {
+//                                             if (ccthis < cclast)
+//                                             {
+//                                                 // CCs were going up and now down, done
+//                                                 flag = false;
+//                                             }
+//                                         }
+//                                         else if (ccdir == -1)
+//                                         {
+//                                             if (ccthis > cclast)
+//                                             {
+//                                                 // CCs were going down and now up, done
+//                                                 flag = false;
+//                                             }
+//                                         }
+//                                     }
+//                                     else
+//                                     { // More than one type of CC detected
+//                                         flag = false;
+//                                     }
+//                                 }
+//                             }
+//                             else
+//                             {
+//                                 flag = false; // Something other than a CC detected (e.g. note)
+//                                 break;
+//                             }
+//                         }
+//                         // If this looks like this might be a loop that would destroy the CCs, repeat
+//                         // the scan but with no margin for CCs being "close enough"
+//                         if (flag)
+//                         {
+//                             flag = true;
+//                             cmd3 = cmd1;
+//                             cmd4 = cmd2;
+//                             while (cmd3 < cmd2)
+//                             {
+//                                 if (cmd4 >= numcmds1)
+//                                 {
+//                                     flag = false;
+//                                     break;
+//                                 }
+//                                 if (!isCloseEnoughV2(section1.getChild(cmd3), section1.getChild(cmd4), false))
+//                                 {
+//                                     flag = false;
+//                                     break;
+//                                 }
+//                                 cmd3++;
+//                                 cmd4++;
+//                             }
+//                             if (!flag)
+//                                 continue; // With tighter restrictions, the loop wasn't valid
+//                             flag = false; // Prohibit "close enough" in subsequent loop repeats
+//                         }
+//                         else
+//                         {
+//                             flag = true; // Allow "close enough" in subsequent loop repeats
+//                         }
+//                         // See if it's repeated some more afterwards
+//                         loopCount = 2;
+//                         cmd3 = cmd1;
+//                         cmdafter = cmd4;
+//                         while (cmd4 < numcmds1 && (loopCount + 1 < maxloopcount))
+//                         {
+//                             if (cmd3 == cmd2)
+//                             {
+//                                 loopCount++;
+//                                 cmd3 = cmd1;
+//                                 cmdafter = cmd4;
+//                             }
+//                             if (!isCloseEnoughV2(section1.getChild(cmd3), section1.getChild(cmd4), flag))
+//                             {
+//                                 break;
+//                             }
+//                             cmd3++;
+//                             cmd4++;
+//                         }
+//                         // How much data to delete?
+//                         numCmdsDelete = cmdafter - cmd2;
+//                         // dbgmsg("Found loop at " + String(cmd1) + ", " + String(numCmdsDelete) + " commands"
+//                         //         + " long, which repeats " + String(loopCount) + " times" );
+//                         dbgmsg("*", false);
+//                         for (int i = 0; i < numCmdsDelete; i++)
+//                         {
+//                             section1.removeChild(cmd2, nullptr);
+//                         }
+//                         // Put in Loop Start command
+//                         want = wantAction("Loop Start", stype1);
+//                         wantProperty(want, "Loop Count", loopCount);
+//                         section1.addChild(createCommand(want), cmd1, nullptr);
+//                         cmd2++; // This increments the position of cmd2!
+//                         // Put in Loop End command
+//                         want = wantAction("Loop End", stype1);
+//                         section1.addChild(createCommand(want), cmd2, nullptr);
+//                         // Move to end of loop to keep parsing
+//                         cmd1 = cmd2;
+//                         break;
+//                     }
+//                 }
+//             }
+//         }
+//     }
+//     if (useCalls)
+//     {
+//         dbgmsg("\nLooking for hooks");
+//         ValueTree origlist("list");
+//         ValueTree item;
+//         ValueTree sectionN;
+//         int secN;
+//         int j;
+//         int hooklength;
+//         int curdatalength, calleddatalength;
+//         for (sec1 = 0; sec1 < structure.getNumChildren(); sec1++)
+//         {
+//             section1 = structure.getChild(sec1);
+//             stype1 = section1.getProperty(idSType, -1);
+//             if (callOnlyLayer && stype1 != 2)
+//                 continue;
+//             numcmds1 = section1.getNumChildren();
+//             int sec1time = getTotalSectionTime(section1);
+//             // dbgmsg("Examining section " + String(sec1) + " (stype == " + String(stype1) + "), " + String(numcmds1) + " commands");
+//             dbgmsg(".", false);
+//             // Pick a command
+//             for (cmd1 = 0; cmd1 < numcmds1 - 1; cmd1++)
+//             {
+//                 command1 = section1.getChild(cmd1);
+//                 action1 = command1.getProperty(idAction, "No Action");
+//                 // dbgmsg("----Command " + String(cmd1) + "(" + action1 + ")");
+//                 if (action1 == "No Action" || action1 == "End of Data" || action1 == "Jump" || action1 == "Branch" || action1 == "Ptr Channel Header" || action1 == "Ptr Note Layer")
+//                 {
+//                     continue;
+//                 }
+//                 // Consider next command too, there's no point in calling a section for 1 command
+//                 command3 = section1.getChild(cmd1 + 1);
+//                 action3 = command3.getProperty(idAction, "No Action");
+//                 if (action3 == "No Action" || action3 == "End of Data" || action3 == "Jump" || action3 == "Branch" || action3 == "Ptr Channel Header" || action3 == "Ptr Note Layer")
+//                 {
+//                     continue;
+//                 }
+//                 // Find all the places, in any section of the same stype, where this string of two commands appears (including overlapping)
+//                 origlist.removeAllChildren(nullptr);
+//                 for (sec2 = sec1; sec2 < structure.getNumChildren(); sec2++)
+//                 {
+//                     section2 = structure.getChild(sec2);
+//                     stype2 = section2.getProperty(idSType, -1);
+//                     numcmds2 = section2.getNumChildren();
+//                     if (stype2 != stype1)
+//                         continue;
+//                     for (cmd2 = (sec2 == sec1 ? cmd1 + 2 : 0); cmd2 < numcmds2 - 1; cmd2++)
+//                     {
+//                         command2 = section2.getChild(cmd2);
+//                         action2 = command2.getProperty(idAction, "No Action");
+//                         if (action2 != action1)
+//                             continue;
+//                         command4 = section2.getChild(cmd2 + 1);
+//                         action4 = command4.getProperty(idAction, "No Action");
+//                         if (action4 != action3)
+//                             continue;
+//                         if (!isCloseEnoughV2(command1, command2, true))
+//                             continue;
+//                         if (!isCloseEnoughV2(command3, command4, true))
+//                             continue;
+//                         item = ValueTree("item");
+//                         item.setProperty(idSection, sec2, nullptr);
+//                         item.setProperty(idCmd, cmd2, nullptr);
+//                         origlist.appendChild(item, nullptr);
+//                         cmd2++;
+//                     }
+//                 }
+//                 // Found anything?
+//                 if (origlist.getNumChildren() == 0)
+//                     continue;
+//                 // dbgmsg("Got hook, found elsewhere " + String(list.getNumChildren()) + " times");
+//                 // Make temporary copy of original list with no overlaps and increasingly long hooks
+//                 int bestscore = 0, curscore;
+//                 ValueTree list, bestlist;
+//                 for (hooklength = 1;; hooklength++)
+//                 {
+//                     // Move cmd3 to the next one in the first section
+//                     cmd3 = cmd1 + hooklength;
+//                     if (cmd3 >= numcmds1)
+//                     {
+//                         break;
+//                     }
+//                     command3 = section1.getChild(cmd3);
+//                     action3 = command3.getProperty(idAction);
+//                     if (action3 == "No Action" || action3 == "End of Data" || action3 == "Jump" || action3 == "Branch" || action3 == "Ptr Channel Header" || action3 == "Ptr Note Layer")
+//                     {
+//                         break;
+//                     }
+//                     // See if we can move all the others
+//                     list = origlist.createCopy();
+//                     for (int i = 0; i < list.getNumChildren(); i++)
+//                     {
+//                         flag = false;
+//                         item = list.getChild(i);
+//                         sec2 = item.getProperty(idSection);
+//                         cmd2 = item.getProperty(idCmd);
+//                         section2 = structure.getChild(sec2);
+//                         numcmds2 = section2.getNumChildren();
+//                         if (cmd2 + hooklength >= numcmds2)
+//                             flag = true;
+//                         if (!flag)
+//                         {
+//                             // Make sure this hook isn't overlapping with any previous one
+//                             for (j = 0; j < i; ++j)
+//                             {
+//                                 if ((int)list.getChild(j).getProperty(idSection) == sec2 && cmd2 <= (int)list.getChild(j).getProperty(idCmd) + hooklength)
+//                                 {
+//                                     flag = true;
+//                                     break;
+//                                 }
+//                             }
+//                             // Also make sure it's not overlapping with the original one!
+//                             if (sec1 == sec2 && cmd2 <= cmd1 + hooklength)
+//                                 flag = true;
+//                         }
+//                         if (!flag)
+//                         {
+//                             // See if this is a valid copy of the original hook
+//                             for (j = 2; j <= hooklength; ++j)
+//                             { // Already know first 2 commands match
+//                                 cmd3 = cmd1 + j;
+//                                 cmd4 = cmd2 + j;
+//                                 if (cmd4 >= numcmds2)
+//                                     break;
+//                                 command3 = section1.getChild(cmd3);
+//                                 action3 = command3.getProperty(idAction, "No Action");
+//                                 command4 = section2.getChild(cmd4);
+//                                 action4 = command4.getProperty(idAction, "No Action");
+//                                 if (action3 != action4)
+//                                     break;
+//                                 if (!isCloseEnoughV2(command3, command4, true))
+//                                     break;
+//                             }
+//                             if (j > hooklength)
+//                             {
+//                                 // Ran off end of loop, therefore it matched
+//                                 continue;
+//                             }
+//                         }
+//                         // Otherwise, drop the command
+//                         list.removeChild(i, nullptr);
+//                         --i;
+//                     }
+//                     curscore = list.getNumChildren() * (hooklength + 1); // Number of commands which will be removed with call
+//                     if (hooklength > 1 && bestscore > curscore)
+//                     {
+//                         // We were saving more commands before: stop
+//                         break;
+//                     }
+//                     bestscore = curscore;
+//                     bestlist = list.createCopy();
+//                 }
+//                 // dbgmsg("Grew hook to " + String(hooklength) + ", now used " + String(bestlist.getNumChildren()) + " times");
+//                 // Calculate data savings, ensure it's a savings
+//                 j = 0;
+//                 for (int i = 0; i < hooklength; ++i)
+//                 {
+//                     j += getNewCommandLength(section1.getChild(cmd1 + i));
+//                 }
+//                 curdatalength = j * bestlist.getNumChildren();
+//                 calleddatalength = j;
+//                 want = wantAction("End of Data", stype1);
+//                 want = createCommand(want);
+//                 calleddatalength += getNewCommandLength(want);
+//                 want = wantAction("Call", stype1);
+//                 wantProperty(want, reladdr ? "Relative Address" : "Absolute Address", 0xFFFF);
+//                 want = createCommand(want);
+//                 calleddatalength += bestlist.getNumChildren() * getNewCommandLength(want);
+//                 if (curdatalength <= calleddatalength)
+//                 {
+//                     // dbgmsg("Current data " + String(curdatalength) + " bytes, with calls " + String(calleddatalength) + " bytes, no savings, aborting call");
+//                     continue;
+//                 }
+//                 else
+//                 {
+//                     // dbgmsg("Call " + String(hooklength) + " commands from " + String(bestlist.getNumChildren())
+//                     //         + " places saved " + String(curdatalength - calleddatalength) + " bytes");
+//                     dbgmsg("*", false);
+//                 }
+//                 // Create new section
+//                 secN = structure.getNumChildren();
+//                 sectionN = ValueTree(section1.getType());
+//                 sectionN.setProperty(idSType, stype1, nullptr);
+//                 if (stype1 == 1 || stype1 == 2)
+//                 {
+//                     sectionN.setProperty(idChannel, section1.getProperty(idChannel), nullptr);
+//                 }
+//                 if (stype1 == 2)
+//                 {
+//                     sectionN.setProperty(idLayer, section1.getProperty(idLayer), nullptr);
+//                 }
+//                 sectionN.setProperty(idSrcCmdRef, cmd1, nullptr);
+//                 structure.addChild(sectionN, secN, nullptr);
+//                 // Copy all data to new section
+//                 for (int i = 0; i < hooklength; i++)
+//                 {
+//                     sectionN.appendChild(section1.getChild(cmd1 + i).createCopy(), nullptr);
+//                 }
+//                 // Add End of Data command to new section
+//                 want = wantAction("End of Data", stype1);
+//                 sectionN.appendChild(createCommand(want), nullptr);
+//                 // Replace all instances of data with pointer to new section
+//                 want = wantAction("Call", stype1);
+//                 wantProperty(want, reladdr ? "Relative Address" : "Absolute Address", 0xFFFF);
+//                 want = createCommand(want);
+//                 want.setProperty(idTargetSection, secN, nullptr);
+//                 for (int i = bestlist.getNumChildren() - 1; i >= 0; i--)
+//                 { // Go in reverse order so the cmd numbers are never changed
+//                     item = bestlist.getChild(i);
+//                     sec2 = item.getProperty(idSection);
+//                     cmd2 = item.getProperty(idCmd);
+//                     section2 = structure.getChild(sec2);
+//                     for (cmd4 = 0; cmd4 < hooklength; cmd4++)
+//                     {
+//                         section2.removeChild(cmd2, nullptr);
+//                     }
+//                     section2.addChild(want.createCopy(), cmd2, nullptr);
+//                 }
+//                 // Replace current instance
+//                 for (cmd3 = 0; cmd3 < hooklength; cmd3++)
+//                 {
+//                     section1.removeChild(cmd1, nullptr);
+//                 }
+//                 section1.addChild(want.createCopy(), cmd1, nullptr);
+//                 // Make sure we didn't screw up
+//                 int sec1time_after = getTotalSectionTime(section1);
+//                 if (sec1time != sec1time_after)
+//                 {
+//                     dbgmsg("CRITICAL: Bug found when creating calls! Call data contained:");
+//                     for (int i = 0; i < hooklength; ++i)
+//                     {
+//                         dbgmsg("--" + sectionN.getChild(i).getProperty(idAction).toString());
+//                     }
+//                     dbgmsg("Call was found at:");
+//                     dbgmsg("--Section " + String(sec1) + " cmd " + String(cmd1));
+//                     for (int i = 0; i < bestlist.getNumChildren(); ++i)
+//                     {
+//                         dbgmsg("-- Section " + bestlist.getChild(i).getProperty(idSection).toString() + " cmd " + bestlist.getChild(i).getProperty(idCmd).toString());
+//                     }
+//                     importresult |= 2;
+//                     return;
+//                 }
+//             }
+//         }
+//         // Replace all 2-loops of 1-calls, 2-loops of 2-calls, or 3-loops of 1-calls with individual calls
+//         dbgmsg("\nFixing short-looped calls...", false);
+//         for (sec1 = 0; sec1 < structure.getNumChildren(); sec1++)
+//         {
+//             section1 = structure.getChild(sec1);
+//             stype1 = section1.getProperty(idSType, -1);
+//             numcmds1 = section1.getNumChildren();
+//             for (cmd1 = 0; cmd1 < numcmds1 - 3; cmd1++)
+//             {
+//                 command1 = section1.getChild(cmd1);
+//                 action1 = command1.getProperty(idAction, "No Action");
+//                 if (action1 != "Loop Start")
+//                     continue;
+//                 loopCount = command1.getChildWithProperty(idMeaning, "Loop Count").getProperty(idValue);
+//                 if (loopCount > 3)
+//                     continue;
+//                 if (loopCount == 3)
+//                 {
+//                     command3 = section1.getChild(cmd1 + 2);
+//                     if (command3.getProperty(idAction, "No Action").toString() != "Loop End")
+//                         continue;
+//                     command2 = section1.getChild(cmd1 + 1);
+//                     if (command2.getProperty(idAction, "No Action").toString() != "Call")
+//                         continue;
+//                     // dbgmsg("----Converting 3-loop of 1-call to 3 calls in sec " + String(sec1) + " cmd " + String(cmd1));
+//                     dbgmsg("*", false);
+//                     // Remove loop start, replace with call
+//                     section1.removeChild(cmd1, nullptr);
+//                     section1.addChild(command2.createCopy(), cmd1, nullptr);
+//                     // Remove loop end, replace with call
+//                     cmd1 += 2;
+//                     section1.removeChild(cmd1, nullptr);
+//                     section1.addChild(command2.createCopy(), cmd1, nullptr);
+//                 }
+//                 else if (loopCount == 2)
+//                 {
+//                     command2 = section1.getChild(cmd1 + 1);
+//                     if (command2.getProperty(idAction, "No Action").toString() != "Call")
+//                         continue;
+//                     command3 = section1.getChild(cmd1 + 2);
+//                     command4 = section1.getChild(cmd1 + 3);
+//                     if (command3.getProperty(idAction, "No Action").toString() == "Loop End")
+//                     {
+//                         // dbgmsg("----Converting 2-loop of 1-call to 2 calls in sec " + String(sec1) + " cmd " + String(cmd1));
+//                         dbgmsg("*", false);
+//                         // Remove loop start, replace with call
+//                         section1.removeChild(cmd1, nullptr);
+//                         section1.addChild(command2.createCopy(), cmd1, nullptr);
+//                         // Remove loop end
+//                         cmd1 += 2;
+//                         section1.removeChild(cmd1, nullptr);
+//                         cmd1--; // Go back so we hit the next command
+//                     }
+//                     else if (command4.getProperty(idAction, "No Action").toString() == "Loop End")
+//                     {
+//                         if (command3.getProperty(idAction, "No Action").toString() != "Call")
+//                             continue;
+//                         // dbgmsg("----Converting 2-loop of 2-calls to 4 calls in sec " + String(sec1) + " cmd " + String(cmd1));
+//                         dbgmsg("*", false);
+//                         // Remove loop start
+//                         section1.removeChild(cmd1, nullptr);
+//                         // Remove loop end
+//                         cmd1 += 2;
+//                         section1.removeChild(cmd1, nullptr);
+//                         // Add two calls
+//                         section1.addChild(command2.createCopy(), cmd1, nullptr);
+//                         cmd1++;
+//                         section1.addChild(command3.createCopy(), cmd1, nullptr);
+//                     }
+//                 }
+//             }
+//         }
+//     }
+// }
+
+// ValueTree SeqFile::createCommandV2(ValueTree want, bool warnIfImpossible)
+// {
+//     if (!want.isValid())
+//         return want;
+//     int stype = want.getProperty(idSType);
+//     String action = want.getProperty(idAction);
+//     String meaning;
+//     ValueTree test, param, param2;
+//     ValueTree possibleCmdsList("possiblecmdslist");
+//     bool flag;
+//     for (int i = 0; i < abi.getNumChildren(); i++)
+//     {
+//         test = abi.getChild(i);
+//         if (!isCommandValidIn(test, stype))
+//             continue;
+//         if (test.getProperty(idAction).toString() != action)
+//             continue;
+//         // See if it has ways to set all the meanings we want
+//         flag = true;
+//         for (int j = 0; j < want.getNumChildren(); j++)
+//         {
+//             meaning = want.getChild(j).getProperty(idMeaning);
+//             param = test.getChildWithProperty(idMeaning, meaning);
+//             if (!param.isValid())
+//             {
+//                 flag = false;
+//                 break;
+//             }
+//             // Check range
+//             int value = want.getChild(j).getProperty(idValue);
+//             int rmin, rmax;
+//             getCommandRange(test, meaning, rmin, rmax);
+//             if (value < rmin || value >= rmax)
+//             {
+//                 // dbgmsg("--Looking for " + action + " command, meaning " + meaning
+//                 //         + ", throwing out due to range " + String(range) + " vs. value " + String(value));
+//                 flag = false;
+//                 break;
+//             }
+//         }
+//         if (flag)
+//         {
+//             // This might be the command we're looking for
+//             test = test.createCopy();
+//             possibleCmdsList.appendChild(test, nullptr);
+//         }
+//     }
+//     if (possibleCmdsList.getNumChildren() == 0)
+//     {
+//         if (warnIfImpossible)
+//         {
+//             dbgmsg("No " + action + " command defined in stype " + String(stype) + " with all the needed parameters!");
+//             for (int j = 0; j < want.getNumChildren(); j++)
+//             {
+//                 dbgmsg("----Want: " + want.getChild(j).getProperty(idMeaning).toString() + " value " + want.getChild(j).getProperty(idValue).toString());
+//             }
+//         }
+//         return ValueTree();
+//     }
+//     // Figure out which one would be shortest
+//     int lowestCmdLen = 100000;
+//     int lowestCmdIndex = 0;
+//     int cmdlen, datalen;
+//     String datasrc;
+//     for (int i = 0; i < possibleCmdsList.getNumChildren(); i++)
+//     {
+//         test = possibleCmdsList.getChild(i);
+//         // Determine length of this command with the given data
+//         cmdlen = 1;
+//         for (int j = 0; j < test.getNumChildren(); j++)
+//         {
+//             param = test.getChild(j);
+//             datasrc = param.getProperty(idDataSrc, "fixed");
+//             datalen = param.getProperty(idDataLen, 0);
+//             param2 = want.getChildWithProperty(idMeaning, param.getProperty(idMeaning));
+//             int value = param2.isValid() ? (int)param2.getProperty(idValue) : 0;
+//             if (datasrc == "offset" || datasrc == "constant")
+//             {
+//                 // do nothing
+//             }
+//             else if (datasrc == "fixed")
+//             {
+//                 cmdlen += datalen;
+//             }
+//             else if (datasrc == "variable")
+//             {
+//                 cmdlen += (value >= 0x80) ? 2 : 1;
+//             }
+//         }
+//         if (cmdlen < lowestCmdLen)
+//         {
+//             lowestCmdLen = cmdlen;
+//             lowestCmdIndex = i;
+//         }
+//     }
+//     // Get best one
+//     test = possibleCmdsList.getChild(lowestCmdIndex);
+//     // Set all values
+//     for (int j = 0; j < test.getNumChildren(); j++)
+//     {
+//         param2 = test.getChild(j);
+//         param = want.getChildWithProperty(idMeaning, param2.getProperty(idMeaning));
+//         if (param.isValid())
+//         {
+//             param2.setProperty(idValue, param.getProperty(idValue), nullptr);
+//         }
+//         else
+//         {
+//             param2.setProperty(idValue, 0, nullptr);
+//         }
+//     }
+//     // Hash
+//     test.setProperty(idHash, Random::getSystemRandom().nextInt(), nullptr);
+//     return test;
+// }
+
+// void SeqFile::advanceToTimestampV2(ValueTree section, int stype, int &cmd, int &t, int newt)
+// {
+//     int maxdelay = getLargestCommandRange(stype, "Delay", "Delay") - 1;
+//     while (t < newt)
+//     {
+//         int dt = std::min(newt - t, maxdelay);
+//         ValueTree want = wantAction("Delay", stype);
+//         wantProperty(want, "Delay", dt);
+//         section.addChild(createCommandV2(want), cmd, nullptr);
+//         ++cmd;
+//         t += dt;
+//     }
+// }
+
+// int SeqFile::getNewCommandLengthV2(ValueTree command)
+// {
+//     if (!command.isValid())
+//         return 0;
+//     int cmdlen = 0;
+//     if ((int)command.getProperty(idCmd) >= 0)
+//         cmdlen++;
+//     ValueTree param;
+//     int p, datalen, value;
+//     String datasrc;
+//     for (p = 0; p < command.getNumChildren(); p++)
+//     {
+//         param = command.getChild(p);
+//         datasrc = param.getProperty(idDataSrc, "fixed");
+//         datalen = param.getProperty(idDataLen, 0);
+//         value = param.getProperty(idValue, 0);
+//         if (datasrc == "offset" || datasrc == "constant")
+//         {
+//             // do nothing
+//         }
+//         else if (datasrc == "fixed")
+//         {
+//             cmdlen += datalen;
+//         }
+//         else if (datasrc == "variable")
+//         {
+//             cmdlen += (value >= 0x80 || param.hasProperty(idDataForce2)) ? 2 : 1;
+//         }
+//     }
+//     return cmdlen;
+// }
+
+// bool SeqFile::isCloseEnoughV2(ValueTree command1, ValueTree command2, bool allowCCMerge)
+// {
+//     String action = command1.getProperty(idAction, "No Action1");
+//     if (action != command2.getProperty(idAction, "No Action2").toString())
+//         return false;
+//     ValueTree param1, param2;
+//     if (action == "Delay")
+//     {
+//         param1 = command1.getChildWithProperty(idMeaning, "Delay");
+//         param2 = command2.getChildWithProperty(idMeaning, "Delay");
+//         if (!param1.isValid() || !param2.isValid())
+//             return false;
+//         return ((int)param1.getProperty(idValue, -1234) == (int)param2.getProperty(idValue, -8971));
+//     }
+//     else if (action == "Note")
+//     {
+//         // Compare notes
+//         param1 = command1.getChildWithProperty(idMeaning, "Note");
+//         param2 = command2.getChildWithProperty(idMeaning, "Note");
+//         if (!param1.isValid() || !param2.isValid())
+//             return false;
+//         if ((int)param1.getProperty(idValue, -1234) != (int)param2.getProperty(idValue, -8971))
+//             return false;
+//         // Compare note lengths / delays
+//         param1 = command1.getChildWithProperty(idMeaning, "Delay");
+//         param2 = command2.getChildWithProperty(idMeaning, "Delay");
+//         if (!param1.isValid() || !param2.isValid())
+//             return false;
+//         if ((int)param1.getProperty(idValue, -1234) != (int)param2.getProperty(idValue, -8971))
+//             return false;
+//         // Compare velocities
+//         int delta = midiopts.getProperty("delta_vel", 5);
+//         param1 = command1.getChildWithProperty(idMeaning, "Velocity");
+//         param2 = command2.getChildWithProperty(idMeaning, "Velocity");
+//         if (!param1.isValid() || !param2.isValid())
+//             return false;
+//         if (abs((int)param1.getProperty(idValue, -1234) - (int)param2.getProperty(idValue, -8971)) > delta)
+//             return false;
+//         // Compare gate lengths
+//         int v1, v2;
+//         delta = midiopts.getProperty("delta_gate", 3);
+//         param1 = command1.getChildWithProperty(idMeaning, "Gate Time");
+//         param2 = command2.getChildWithProperty(idMeaning, "Gate Time");
+//         v1 = (param1.isValid()) ? ((int)param1.getProperty(idValue, 0)) : 0;
+//         v2 = (param2.isValid()) ? ((int)param2.getProperty(idValue, 0)) : 0;
+//         if (abs(v2 - v1) > delta)
+//             return false;
+//         // Finally
+//         return true;
+//     }
+//     else if (action == "CC or CC Group")
+//     {
+//         int delta = allowCCMerge ? (int)midiopts.getProperty("delta_cc", 3) : 0;
+//         if (command1.getNumChildren() != command2.getNumChildren())
+//             return false;
+//         for (int i = 0; i < command1.getNumChildren(); ++i)
+//         {
+//             param1 = command1.getChild(i);
+//             if (param1.getProperty(idMeaning).toString() != "CC")
+//                 continue;
+//             param2 = command2.getChild(i);
+//             if ((int)param1.getProperty(idCC, -1) != (int)param2.getProperty(idCC, -2))
+//                 return false;
+//             if (abs((int)param1.getProperty(idValue, -1234) - (int)param2.getProperty(idValue, -8971)) > delta)
+//                 return false;
+//         }
+//         return true;
+//     }
+//     else if (action == "Mute Behavior" || action == "Mute Scale" || action == "Master Volume" || action == "Tempo" || action == "Chn Transpose" || action == "Layer Transpose")
+//     {
+//         param1 = command1.getChildWithProperty(idMeaning, "Value");
+//         param2 = command2.getChildWithProperty(idMeaning, "Value");
+//         if (!param1.isValid() || !param2.isValid())
+//             return false;
+//         return ((int)param1.getProperty(idValue, -1234) == (int)param2.getProperty(idValue, -8971));
+//     }
+//     else if (action == "Set Short Notes" || action == "Set Long Notes")
+//     {
+//         return true;
+//     }
+//     else
+//     {
+//         return false;
+//     }
+// }
+
+
+
+
+
+
+
+
+
+
+
 
 int SeqFile::getTotalSectionTime(ValueTree section) {
     int totaltime = 0, t, loopmult = 1;

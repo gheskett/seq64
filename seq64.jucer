@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<JUCERPROJECT id="uDdIKt" name="seq64" projectType="consoleapp" jucerVersion="5.4.5"
+<JUCERPROJECT id="uDdIKt" name="seq64" projectType="consoleapp" jucerVersion="5.4.7"
               companyName="Sauraen" companyCopyright="Copyright (C) 2014-2019 Sauraen"
               companyWebsite="sauraen.com" companyEmail="sauraen@gmail.com">
   <MAINGROUP id="xL4ytI" name="seq64">
@@ -101,7 +101,7 @@
   </MODULES>
   <LIVE_SETTINGS>
     <LINUX/>
-    <WINDOWS/>
+    <WINDOWS buildEnabled="1"/>
   </LIVE_SETTINGS>
   <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1"/>
 </JUCERPROJECT>

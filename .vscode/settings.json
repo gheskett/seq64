@@ -1,0 +1,14 @@
+{
+    "files.associations": {
+        "functional": "cpp",
+        "optional": "cpp",
+        "regex": "cpp",
+        "system_error": "cpp",
+        "xlocmon": "cpp",
+        "xtr1common": "cpp",
+        "memory": "cpp",
+        "algorithm": "cpp",
+        "type_traits": "cpp",
+        "xutility": "cpp"
+    }
+}
